@@ -1,0 +1,6 @@
+{
+  "name": "CareerPilot: Job Tracker & Interview Suite",
+  "description": "Intelligent job application tracker with automated URL scraping, resume version management, ATS keyword gap analysis, and real-world company interview coaching.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

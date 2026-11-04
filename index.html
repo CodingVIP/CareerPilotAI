@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CareerPilot - Job Tracker & Interview Prep Suite</title>
+    <meta name="description" content="Intelligent job application tracker with automated URL scraping, resume version management, ATS keyword gap analysis, and real-world company interview coaching." />
+    <meta property="og:title" content="CareerPilot - Job Tracker & Interview Prep Suite" />
+    <meta property="og:description" content="Intelligent job application tracker with automated URL scraping, resume version management, ATS keyword gap analysis, and real-world company interview coaching." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Suppress Vite HMR WebSocket connection warnings in sandboxed iframe environment
+      window.addEventListener('error', function (e) {
+        if (
+          e.message &&
+          (e.message.includes('WebSocket') ||
+            e.message.includes('createWebSocketModuleRunnerTransport') ||
+            e.message.includes('@vite/client'))
+        ) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        }
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        const reason = e.reason ? String(e.reason) : '';
+        if (reason.includes('WebSocket') || reason.includes('createWebSocketModuleRunnerTransport')) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
