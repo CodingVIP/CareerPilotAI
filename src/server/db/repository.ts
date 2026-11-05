@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { database } from './client';
 import {
   applications,
@@ -8,6 +8,7 @@ import {
   profiles,
   resumeVersions,
   users,
+  syncOperations,
 } from './schema';
 
 export interface SyncSnapshot {
@@ -77,4 +78,89 @@ export async function getUserSnapshot(userId: string): Promise<SyncSnapshot> {
 export async function ensureUser(userId: string): Promise<void> {
   const db = requireDatabase();
   await db.insert(users).values({ id: userId }).onConflictDoNothing();
+}
+
+export interface SyncOperationInput {
+  id: string;
+  entityType: 'application' | 'profile' | 'privacy';
+  entityId: string;
+  operation: 'upsert' | 'delete';
+  baseUpdatedAt?: string;
+  payload: Record<string, unknown>;
+}
+
+export async function applySyncOperation(userId: string, input: SyncOperationInput): Promise<'applied' | 'duplicate' | 'conflict'> {
+  const db = requireDatabase();
+  const existing = await db
+    .select({ id: syncOperations.id })
+    .from(syncOperations)
+    .where(and(eq(syncOperations.id, input.id), eq(syncOperations.userId, userId)));
+  if (existing.length) return 'duplicate';
+
+  if (input.entityType === 'application') {
+    const values = {
+      id: input.entityId,
+      userId,
+      ...(input.payload as Record<string, unknown>),
+      updatedAt: new Date(),
+    } as typeof applications.$inferInsert;
+    if (input.operation === 'delete') {
+      await db.delete(applications).where(and(eq(applications.id, input.entityId), eq(applications.userId, userId)));
+    } else {
+      if (input.baseUpdatedAt) {
+        const current = await db
+          .select({ updatedAt: applications.updatedAt })
+          .from(applications)
+          .where(and(eq(applications.id, input.entityId), eq(applications.userId, userId)));
+        if (current[0] && current[0].updatedAt > new Date(input.baseUpdatedAt)) return 'conflict';
+      }
+      await db.insert(applications).values(values).onConflictDoUpdate({
+        target: applications.id,
+        set: values,
+      });
+    }
+  } else if (input.entityType === 'profile') {
+    const values = {
+      id: input.entityId,
+      userId,
+      ...(input.payload as Record<string, unknown>),
+      updatedAt: new Date(),
+    } as typeof profiles.$inferInsert;
+    if (input.operation === 'delete') {
+      await db.delete(profiles).where(and(eq(profiles.id, input.entityId), eq(profiles.userId, userId)));
+    } else {
+      if (input.baseUpdatedAt) {
+        const current = await db
+          .select({ updatedAt: profiles.updatedAt })
+          .from(profiles)
+          .where(and(eq(profiles.id, input.entityId), eq(profiles.userId, userId)));
+        if (current[0] && current[0].updatedAt > new Date(input.baseUpdatedAt)) return 'conflict';
+      }
+      await db.insert(profiles).values(values).onConflictDoUpdate({
+        target: profiles.id,
+        set: values,
+      });
+    }
+  } else if (input.entityType === 'privacy') {
+    const values = {
+      userId,
+      ...(input.payload as Record<string, unknown>),
+      updatedAt: new Date(),
+    } as typeof privacySettings.$inferInsert;
+    await db.insert(privacySettings).values(values).onConflictDoUpdate({
+      target: privacySettings.userId,
+      set: values,
+    });
+  }
+
+  await db.insert(syncOperations).values({
+    id: input.id,
+    userId,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    operation: input.operation,
+    baseUpdatedAt: input.baseUpdatedAt ? new Date(input.baseUpdatedAt) : null,
+    payload: input.payload,
+  });
+  return 'applied';
 }

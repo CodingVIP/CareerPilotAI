@@ -95,3 +95,14 @@ export const privacySettings = pgTable('privacy_settings', {
   telemetryDisabled: boolean('telemetry_disabled').notNull().default(true),
   ...timestamps,
 });
+
+export const syncOperations = pgTable('sync_operations', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  entityType: text('entity_type').notNull(),
+  entityId: text('entity_id').notNull(),
+  operation: text('operation').notNull(),
+  baseUpdatedAt: timestamp('base_updated_at', { withTimezone: true }),
+  payload: jsonb('payload').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});

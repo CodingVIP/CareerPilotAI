@@ -11,7 +11,7 @@ import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import { createServer as createViteServer } from 'vite';
 import { verifyToken } from '@clerk/backend';
-import { ensureUser, getUserSnapshot } from './src/server/db/repository';
+import { applySyncOperation, ensureUser, getUserSnapshot, SyncOperationInput } from './src/server/db/repository';
 
 dotenv.config();
 
@@ -760,6 +760,33 @@ app.get('/api/sync/bootstrap', requireApiAuth, async (_req, res) => {
     return res.json({ success: true, data: await getUserSnapshot(userId) });
   } catch (error) {
     console.error('Cloud bootstrap failed:', error);
+    return res.status(503).json({ error: 'Cloud persistence is not configured or unavailable.' });
+  }
+});
+
+app.post('/api/sync/operations', requireApiAuth, async (req, res) => {
+  try {
+    const userId = res.locals.userId as string;
+    const operations = req.body?.operations;
+    if (!Array.isArray(operations) || operations.length > 50) {
+      return res.status(400).json({ error: 'Provide between 1 and 50 sync operations.' });
+    }
+    await ensureUser(userId);
+    const results = [];
+    for (const operation of operations as SyncOperationInput[]) {
+      if (
+        !operation?.id ||
+        !['application', 'profile', 'privacy'].includes(operation.entityType) ||
+        !['upsert', 'delete'].includes(operation.operation) ||
+        typeof operation.payload !== 'object'
+      ) {
+        return res.status(400).json({ error: 'Invalid sync operation.' });
+      }
+      results.push({ id: operation.id, status: await applySyncOperation(userId, operation) });
+    }
+    return res.json({ success: true, results });
+  } catch (error) {
+    console.error('Cloud sync failed:', error);
     return res.status(503).json({ error: 'Cloud persistence is not configured or unavailable.' });
   }
 });
