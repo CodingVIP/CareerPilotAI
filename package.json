@@ -28,6 +28,7 @@
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.4",
     "express": "^4.21.2",
+    "inngest": "^4.26.2",
     "lucide-react": "^0.546.0",
     "mammoth": "^1.13.0",
     "motion": "^12.23.24",

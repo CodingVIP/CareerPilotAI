@@ -21,6 +21,8 @@ import {
 } from './src/server/db/repository';
 import { decodeResumeData, deletePrivateResume, readPrivateResume, uploadPrivateResume } from './src/server/blob';
 import { isDistributedRateLimitingConfigured, rateLimit } from './src/server/rateLimit';
+import { inngest, inngestFunctions } from './src/server/inngest';
+import { serve as serveInngest } from 'inngest/express';
 
 dotenv.config();
 
@@ -32,6 +34,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(express.json({ limit: '10mb' }));
+app.use('/api/inngest', serveInngest({ client: inngest, functions: inngestFunctions }));
 
 const MAX_FETCH_BYTES = 5 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
@@ -780,6 +783,38 @@ app.post('/api/sync/operations', requireApiAuth, rateLimit(60, 60 * 1000), async
   } catch (error) {
     console.error('Cloud sync failed:', error);
     return res.status(503).json({ error: 'Cloud persistence is not configured or unavailable.' });
+  }
+});
+
+app.post('/api/sync/operations/async', requireApiAuth, rateLimit(20, 60 * 1000), async (req, res) => {
+  try {
+    const userId = res.locals.userId as string;
+    const operations = req.body?.operations;
+    if (!Array.isArray(operations) || operations.length < 1 || operations.length > 50) {
+      return res.status(400).json({ error: 'Provide between 1 and 50 sync operations.' });
+    }
+    if (
+      operations.some(
+        (operation) =>
+          !operation?.id ||
+          !operation.entityId ||
+          !['application', 'profile', 'resume', 'privacy', 'atsResult', 'interviewDossier'].includes(operation.entityType) ||
+          !['upsert', 'delete'].includes(operation.operation) ||
+          !operation.payload ||
+          typeof operation.payload !== 'object' ||
+          Array.isArray(operation.payload),
+      )
+    ) {
+      return res.status(400).json({ error: 'Invalid sync operation.' });
+    }
+    await inngest.send({
+      name: 'careerpilot/sync.requested',
+      data: { userId, operations },
+    });
+    return res.status(202).json({ success: true, queued: operations.length });
+  } catch (error) {
+    console.error('Unable to queue cloud sync:', error);
+    return res.status(503).json({ error: 'Background processing is unavailable.' });
   }
 });
 
