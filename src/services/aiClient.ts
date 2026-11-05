@@ -22,6 +22,14 @@ export interface ScrapedJobResponse {
   fallbackNotice?: string;
 }
 
+export type AiJobKind = 'scrape' | 'ats' | 'interview';
+
+export interface QueuedAiJob {
+  success: true;
+  jobId: string;
+  kind: AiJobKind;
+}
+
 function cleanErrorMessage(raw: string): string {
   if (!raw) return 'Operation failed. Please try again.';
   try {
@@ -39,6 +47,20 @@ function cleanErrorMessage(raw: string): string {
 }
 
 export const apiService = {
+  async enqueueAiJob(kind: AiJobKind, payload: Record<string, unknown>): Promise<QueuedAiJob> {
+    const authHeaders = await getAuthHeaders();
+    const res = await fetch('/api/ai/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({ kind, payload }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(cleanErrorMessage(data.error || 'Failed to queue AI job.'));
+    }
+    return data as QueuedAiJob;
+  },
+
   async scrapeJob(payload: ScrapeJobPayload): Promise<ScrapedJobResponse> {
     const authHeaders = await getAuthHeaders();
     const res = await fetch('/api/jobs/scrape', {
