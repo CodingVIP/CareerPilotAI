@@ -16,6 +16,7 @@ import {
 import { JobApplication, JobProfile, KeywordAnalysisResult } from '../../types/job';
 import { apiService } from '../../services/aiClient';
 import { storageService } from '../../services/storage';
+import { syncService } from '../../services/sync';
 
 interface AtsOptimizerViewProps {
   applications: JobApplication[];
@@ -112,6 +113,12 @@ export const AtsOptimizerView: React.FC<AtsOptimizerViewProps> = ({
 
       setAnalysisResult(result);
       storageService.saveKeywordMatch(cacheKey, result);
+      syncService.enqueueUpsert('atsResult', cacheKey, {
+        applicationId: selectedApp.id,
+        resumeVersionId: selectedResume.id,
+        contentHash: cacheKey,
+        result,
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Analysis failed';
       setError(msg);

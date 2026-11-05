@@ -18,6 +18,7 @@ import {
 import { JobApplication, JobProfile, InterviewPrepDossier } from '../../types/job';
 import { apiService } from '../../services/aiClient';
 import { storageService } from '../../services/storage';
+import { syncService } from '../../services/sync';
 
 interface InterviewPrepViewProps {
   applications: JobApplication[];
@@ -92,6 +93,12 @@ export const InterviewPrepView: React.FC<InterviewPrepViewProps> = ({
 
       setDossier(generated);
       storageService.saveInterviewDossier(selectedApp.id, generated);
+      syncService.enqueueUpsert('interviewDossier', selectedApp.id, {
+        applicationId: selectedApp.id,
+        contentHash: `${selectedApp.updatedAt}:${selectedResume?.uploadedAt || ''}`,
+        dossier: generated,
+        masteredQuestionIds: generated.masteredQuestionIds || {},
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Interview intelligence generation failed';
       setError(msg);
@@ -106,6 +113,12 @@ export const InterviewPrepView: React.FC<InterviewPrepViewProps> = ({
       if (dossier && selectedApp) {
         storageService.saveInterviewDossier(selectedApp.id, {
           ...dossier,
+          masteredQuestionIds: updated,
+        });
+        syncService.enqueueUpsert('interviewDossier', selectedApp.id, {
+          applicationId: selectedApp.id,
+          contentHash: `${selectedApp.updatedAt}:${selectedResume?.uploadedAt || ''}`,
+          dossier: { ...dossier, masteredQuestionIds: updated },
           masteredQuestionIds: updated,
         });
       }

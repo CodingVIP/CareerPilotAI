@@ -31,6 +31,18 @@ function updateOperation(id: string, update: Partial<PendingSyncOperation>): voi
 }
 
 export const syncService = {
+  enqueueUpsert(
+    entityType: PendingSyncOperation['entityType'],
+    entityId: string,
+    payload: Record<string, unknown>,
+    baseUpdatedAt?: string,
+  ): void {
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `sync-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    this.enqueue({ id, entityType, entityId, operation: 'upsert', payload, baseUpdatedAt });
+  },
+
   enqueue(operation: Omit<PendingSyncOperation, 'createdAt' | 'status'>): void {
     const queue = readQueue();
     if (!queue.some((item) => item.id === operation.id)) {
