@@ -32,6 +32,22 @@ test('sync endpoint rejects invalid operation shapes', async () => {
   assert.equal(response.body.error, 'Invalid sync operation.');
 });
 
+test('async sync endpoint rejects malformed batches before enqueueing', async () => {
+  const response = await request(app)
+    .post('/api/sync/operations/async')
+    .send({ operations: [{ id: 'op-1', entityId: 'app-1', entityType: 'unknown', operation: 'upsert', payload: {} }] });
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error, 'Invalid sync operation.');
+});
+
+test('async sync endpoint rejects empty batches before enqueueing', async () => {
+  const response = await request(app)
+    .post('/api/sync/operations/async')
+    .send({ operations: [] });
+  assert.equal(response.status, 400);
+  assert.match(response.body.error, /between 1 and 50/i);
+});
+
 test('document parser rejects missing upload data', async () => {
   const response = await request(app).post('/api/documents/parse').send({});
   assert.equal(response.status, 400);
