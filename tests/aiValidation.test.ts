@@ -10,8 +10,27 @@ test('validates and normalizes scraped job data', () => {
     jobType: 'REMOTE',
     requirements: ['TypeScript'],
     description: 'Build software.',
+    salaryMin: 120000,
+    salaryMax: 160000,
+    salaryCurrency: 'USD',
   });
   assert.equal(result.jobType, 'remote');
+});
+
+test('rejects invalid scraped salary ranges', () => {
+  assert.throws(
+    () => validateScrapeResult({
+      company: 'Acme',
+      role: 'Engineer',
+      location: 'Remote',
+      jobType: 'remote',
+      requirements: [],
+      description: 'Build software.',
+      salaryMin: 200000,
+      salaryMax: 100000,
+    }),
+    /invalid salary range/i,
+  );
 });
 
 test('rejects malformed ATS output', () => {

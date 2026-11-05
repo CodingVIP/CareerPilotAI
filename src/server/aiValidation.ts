@@ -21,6 +21,13 @@ function requireRecordArray(value: unknown, field: string): Record<string, unkno
   return value;
 }
 
+function validateOptionalMoney(value: unknown, field: string): void {
+  if (value === undefined || value === null) return;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error(`AI response contains an invalid ${field}.`);
+  }
+}
+
 export function validateScrapeResult(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) throw new Error('AI returned an invalid job posting.');
   requireString(value.company, 'company');
@@ -30,6 +37,19 @@ export function validateScrapeResult(value: unknown): Record<string, unknown> {
   if (!['remote', 'hybrid', 'onsite'].includes(jobType)) throw new Error('AI returned an invalid job type.');
   requireStringArray(value.requirements, 'requirements');
   requireString(value.description, 'description');
+  validateOptionalMoney(value.salaryMin, 'salary minimum');
+  validateOptionalMoney(value.salaryMax, 'salary maximum');
+  if (value.salaryMin !== undefined && value.salaryMax !== undefined &&
+      value.salaryMin !== null && value.salaryMax !== null &&
+      (value.salaryMin as number) > (value.salaryMax as number)) {
+    throw new Error('AI response contains an invalid salary range.');
+  }
+  if (value.salaryCurrency !== undefined && value.salaryCurrency !== null) {
+    requireString(value.salaryCurrency, 'salary currency');
+  }
+  if (value.rawDescription !== undefined && value.rawDescription !== null) {
+    requireString(value.rawDescription, 'raw description');
+  }
   return { ...value, jobType };
 }
 
@@ -76,11 +96,14 @@ export function validateInterviewResult(value: unknown): Record<string, unknown>
     requireString(item.source, 'experience source');
     requireString(item.summary, 'experience summary');
     requireString(item.roleRelevance, 'experience role relevance');
+    if (item.difficulty !== undefined) requireString(item.difficulty, 'experience difficulty');
+    if (item.interviewFormat !== undefined) requireString(item.interviewFormat, 'interview format');
   }
   for (const item of technical) {
     requireString(item.question, 'technical question');
     requireString(item.topic, 'technical topic');
     requireString(item.sampleAnswer, 'technical sample answer');
+    if (item.importance !== undefined) requireString(item.importance, 'technical importance');
   }
   for (const item of behavioral) {
     requireString(item.question, 'behavioral question');
