@@ -3,6 +3,7 @@ import { X, ShieldCheck, Download, Upload, RefreshCw, CheckCircle2, Lock } from 
 import { UserPrivacySettings } from '../../types/job';
 import { storageService } from '../../services/storage';
 import { getCloudSnapshot } from '../../services/auth';
+import { syncService } from '../../services/sync';
 import { Dialog } from '../common/Dialog';
 
 interface PrivacyModalProps {
@@ -26,16 +27,21 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
   const [isLoadingCloud, setIsLoadingCloud] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [conflictCount, setConflictCount] = useState(0);
 
   useEffect(() => {
     setSettings(privacy);
+    setPendingCount(syncService.getPending().length);
+    setConflictCount(syncService.getConflicts().length);
   }, [privacy, isOpen]);
 
   const handleToggleSync = () => {
     const updated = {
       ...settings,
       cloudSyncEnabled: !settings.cloudSyncEnabled,
-      lastSyncedAt: new Date().toISOString(),
+      lastSyncedAt: settings.cloudSyncEnabled ? settings.lastSyncedAt : undefined,
     };
     setSettings(updated);
     onUpdatePrivacy(updated);
@@ -109,6 +115,37 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
     }
   };
 
+  const handleSyncNow = async () => {
+    if (!navigator.onLine) {
+      setImportMessage('You are offline. Changes will synchronize when connectivity returns.');
+      return;
+    }
+    setIsSyncing(true);
+    setImportMessage(null);
+    try {
+      const result = await syncService.flush();
+      const syncedAt = result.applied > 0 ? new Date().toISOString() : settings.lastSyncedAt;
+      const updated = { ...settings, lastSyncedAt: syncedAt };
+      setSettings(updated);
+      onUpdatePrivacy(updated);
+      setPendingCount(syncService.getPending().length);
+      setConflictCount(syncService.getConflicts().length);
+      setImportMessage(
+        result.conflicts
+          ? `${result.applied} change${result.applied === 1 ? '' : 's'} synchronized; ${result.conflicts} conflict${result.conflicts === 1 ? '' : 's'} need review.`
+          : result.applied
+            ? `${result.applied} local change${result.applied === 1 ? '' : 's'} synchronized.`
+            : 'No pending local changes to synchronize.',
+      );
+    } catch (error: unknown) {
+      setImportMessage(error instanceof Error ? error.message : 'Unable to synchronize local changes.');
+      setPendingCount(syncService.getPending().length);
+      setConflictCount(syncService.getConflicts().length);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -148,6 +185,9 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
                 {settings.lastSyncedAt
                   ? `Last synchronized: ${new Date(settings.lastSyncedAt).toLocaleTimeString()}`
                   : syncStatus}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {pendingCount} pending · {conflictCount} conflict{conflictCount === 1 ? '' : 's'}
               </p>
             </div>
             <button
@@ -205,15 +245,26 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
               </label>
             </div>
             {settings.cloudSyncEnabled && (
-              <button
-                type="button"
-                onClick={() => void handleLoadCloud()}
-                disabled={isLoadingCloud}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-950/50 disabled:opacity-60"
-              >
-                <RefreshCw className={`w-4 h-4 ${isLoadingCloud ? 'animate-spin' : ''}`} />
-                {isLoadingCloud ? 'Loading cloud data…' : 'Load latest cloud data'}
-              </button>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleSyncNow()}
+                  disabled={isSyncing}
+                  className="flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-950/50 disabled:opacity-60"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                  {isSyncing ? 'Syncing…' : 'Sync pending changes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleLoadCloud()}
+                  disabled={isLoadingCloud}
+                  className="flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60"
+                >
+                  <Download className="w-4 h-4" />
+                  {isLoadingCloud ? 'Loading…' : 'Load cloud data'}
+                </button>
+              </div>
             )}
 
             {importMessage && (
