@@ -55,3 +55,48 @@ test('maintains resume references when a version is deleted', () => {
     assert.equal(updatedProfile.resumeVersions.some((item) => item.isDefault), true);
   }
 });
+
+test('imports a validated cloud snapshot and reports record counts', () => {
+  const counts = storageService.importCloudSnapshot({
+    applications: [{
+      id: 'cloud-app',
+      company: 'Cloud Co',
+      role: 'Engineer',
+      url: '',
+      status: 'wishlist',
+      salaryCurrency: 'USD',
+      location: 'Remote',
+      jobType: 'remote',
+      requirements: [],
+      description: 'Build things.',
+      notes: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }],
+    profiles: [{
+      id: 'cloud-profile',
+      name: 'Cloud profile',
+      targetRole: 'Engineer',
+      summary: '',
+      skills: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      resumeVersions: [{
+        id: 'cloud-resume',
+        versionName: 'Cloud resume',
+        content: 'One two three',
+        tags: [],
+        isDefault: true,
+        uploadedAt: new Date().toISOString(),
+      }],
+    }],
+    privacy: {
+      cloudSyncEnabled: true,
+      encryptLocalData: false,
+      telemetryDisabled: true,
+    },
+  });
+  assert.deepEqual(counts, { applications: 1, profiles: 1, resumes: 1 });
+  assert.equal(storageService.getApplications()[0].id, 'cloud-app');
+  assert.equal(storageService.getProfiles()[0].resumeVersions[0].wordCount, 3);
+});

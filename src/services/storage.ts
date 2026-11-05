@@ -658,6 +658,48 @@ export const storageService = {
     }
   },
 
+  importCloudSnapshot(snapshot: unknown): { applications: number; profiles: number; resumes: number } {
+    if (!snapshot || typeof snapshot !== 'object') throw new Error('Cloud data is not available.');
+    const cloud = snapshot as Record<string, unknown>;
+    const applications = Array.isArray(cloud.applications) ? cloud.applications : [];
+    const cloudProfiles = Array.isArray(cloud.profiles) ? cloud.profiles : [];
+    const profiles = cloudProfiles.map((profile) => {
+      if (!profile || typeof profile !== 'object') throw new Error('Cloud profile data is invalid.');
+      const source = profile as Record<string, unknown>;
+      const resumeVersions = Array.isArray(source.resumeVersions) ? source.resumeVersions : [];
+      return {
+        ...source,
+        resumeVersions: resumeVersions.map((resume) => {
+          if (!resume || typeof resume !== 'object') throw new Error('Cloud resume data is invalid.');
+          const item = resume as Record<string, unknown>;
+          const content = typeof item.content === 'string' ? item.content : '';
+          return {
+            ...item,
+            content,
+            wordCount: content.trim() ? content.trim().split(/\s+/).length : 0,
+          };
+        }),
+      };
+    });
+    const privacy = cloud.privacy && typeof cloud.privacy === 'object'
+      ? cloud.privacy
+      : this.getPrivacySettings();
+    const imported = this.importData(JSON.stringify({
+      applications,
+      profiles,
+      privacy,
+      activeProfileId: profiles[0] && typeof profiles[0] === 'object' ? (profiles[0] as Record<string, unknown>).id : '',
+      interviewCache: {},
+      matchCache: {},
+    }));
+    if (!imported) throw new Error('Cloud data does not match the CareerPilot schema.');
+    return {
+      applications: applications.length,
+      profiles: profiles.length,
+      resumes: profiles.reduce((count, profile) => count + profile.resumeVersions.length, 0),
+    };
+  },
+
   resetToDefaults(): void {
     localStorage.removeItem(STORAGE_KEY_APPLICATIONS);
     localStorage.removeItem(STORAGE_KEY_PROFILES);

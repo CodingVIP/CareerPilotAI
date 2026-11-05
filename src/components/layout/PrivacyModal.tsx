@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, ShieldCheck, Download, Upload, RefreshCw, CheckCircle2, Lock } from 'lucide-react';
 import { UserPrivacySettings } from '../../types/job';
 import { storageService } from '../../services/storage';
+import { getCloudSnapshot } from '../../services/auth';
 import { Dialog } from '../common/Dialog';
 
 interface PrivacyModalProps {
@@ -24,6 +25,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
+  const [isLoadingCloud, setIsLoadingCloud] = useState(false);
 
   useEffect(() => {
     setSettings(privacy);
@@ -87,6 +89,24 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
     storageService.resetToDefaults();
     onDataImported();
     onClose();
+  };
+
+  const handleLoadCloud = async () => {
+    if (!window.confirm('Replace local data with the latest cloud snapshot? Export a backup first if you need to keep local-only changes.')) return;
+    setIsLoadingCloud(true);
+    setImportMessage(null);
+    try {
+      const snapshot = await getCloudSnapshot();
+      const counts = storageService.importCloudSnapshot(snapshot);
+      onDataImported();
+      setImportMessage(
+        `Loaded ${counts.applications} application${counts.applications === 1 ? '' : 's'}, ${counts.profiles} profile${counts.profiles === 1 ? '' : 's'}, and ${counts.resumes} resume${counts.resumes === 1 ? '' : 's'} from cloud.`,
+      );
+    } catch (error: unknown) {
+      setImportMessage(error instanceof Error ? error.message : 'Unable to load cloud data.');
+    } finally {
+      setIsLoadingCloud(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -184,6 +204,17 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
                 <input type="file" accept=".json" onChange={handleImportFile} className="hidden" />
               </label>
             </div>
+            {settings.cloudSyncEnabled && (
+              <button
+                type="button"
+                onClick={() => void handleLoadCloud()}
+                disabled={isLoadingCloud}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-950/50 disabled:opacity-60"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoadingCloud ? 'animate-spin' : ''}`} />
+                {isLoadingCloud ? 'Loading cloud data…' : 'Load latest cloud data'}
+              </button>
+            )}
 
             {importMessage && (
               <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800">
