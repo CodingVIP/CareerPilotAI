@@ -106,7 +106,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
       const counts = storageService.importCloudSnapshot(snapshot);
       onDataImported();
       setImportMessage(
-        `Loaded ${counts.applications} application${counts.applications === 1 ? '' : 's'}, ${counts.profiles} profile${counts.profiles === 1 ? '' : 's'}, and ${counts.resumes} resume${counts.resumes === 1 ? '' : 's'} from cloud.`,
+        `Loaded ${counts.applications} application${counts.applications === 1 ? '' : 's'}, ${counts.profiles} profile${counts.profiles === 1 ? '' : 's'}, ${counts.resumes} resume${counts.resumes === 1 ? '' : 's'}, ${counts.atsResults} ATS result${counts.atsResults === 1 ? '' : 's'}, and ${counts.interviewDossiers} interview dossier${counts.interviewDossiers === 1 ? '' : 's'} from cloud.`,
       );
     } catch (error: unknown) {
       setImportMessage(error instanceof Error ? error.message : 'Unable to load cloud data.');

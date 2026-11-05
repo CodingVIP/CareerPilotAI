@@ -90,13 +90,24 @@ test('imports a validated cloud snapshot and reports record counts', () => {
         uploadedAt: new Date().toISOString(),
       }],
     }],
+    atsResults: [{
+      contentHash: 'cloud-cache-key',
+      result: { score: 88 },
+    }],
+    interviewDossiers: [{
+      applicationId: 'cloud-app',
+      dossier: { companyOverview: 'Cloud Co' },
+      masteredQuestionIds: { 'technical-0': true },
+    }],
     privacy: {
       cloudSyncEnabled: true,
       encryptLocalData: false,
       telemetryDisabled: true,
     },
   });
-  assert.deepEqual(counts, { applications: 1, profiles: 1, resumes: 1 });
+  assert.deepEqual(counts, { applications: 1, profiles: 1, resumes: 1, atsResults: 1, interviewDossiers: 1 });
   assert.equal(storageService.getApplications()[0].id, 'cloud-app');
   assert.equal(storageService.getProfiles()[0].resumeVersions[0].wordCount, 3);
+  assert.equal(storageService.getKeywordMatch('cloud-cache-key')?.score, 88);
+  assert.equal(storageService.getInterviewDossier('cloud-app')?.companyOverview, 'Cloud Co');
 });

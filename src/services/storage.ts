@@ -658,7 +658,13 @@ export const storageService = {
     }
   },
 
-  importCloudSnapshot(snapshot: unknown): { applications: number; profiles: number; resumes: number } {
+  importCloudSnapshot(snapshot: unknown): {
+    applications: number;
+    profiles: number;
+    resumes: number;
+    atsResults: number;
+    interviewDossiers: number;
+  } {
     if (!snapshot || typeof snapshot !== 'object') throw new Error('Cloud data is not available.');
     const cloud = snapshot as Record<string, unknown>;
     const applications = Array.isArray(cloud.applications) ? cloud.applications : [];
@@ -684,19 +690,44 @@ export const storageService = {
     const privacy = cloud.privacy && typeof cloud.privacy === 'object'
       ? cloud.privacy
       : this.getPrivacySettings();
+    const atsResults = Array.isArray(cloud.atsResults) ? cloud.atsResults : [];
+    const interviewDossiers = Array.isArray(cloud.interviewDossiers) ? cloud.interviewDossiers : [];
+    const interviewCache: Record<string, unknown> = {};
+    for (const item of interviewDossiers) {
+      if (!item || typeof item !== 'object') throw new Error('Cloud interview data is invalid.');
+      const record = item as Record<string, unknown>;
+      if (typeof record.applicationId !== 'string' || !record.dossier || typeof record.dossier !== 'object') {
+        throw new Error('Cloud interview data is invalid.');
+      }
+      interviewCache[record.applicationId] = {
+        ...(record.dossier as Record<string, unknown>),
+        masteredQuestionIds: record.masteredQuestionIds || {},
+      };
+    }
+    const matchCache: Record<string, unknown> = {};
+    for (const item of atsResults) {
+      if (!item || typeof item !== 'object') throw new Error('Cloud ATS data is invalid.');
+      const record = item as Record<string, unknown>;
+      if (typeof record.contentHash !== 'string' || !record.result || typeof record.result !== 'object') {
+        throw new Error('Cloud ATS data is invalid.');
+      }
+      matchCache[record.contentHash] = record.result;
+    }
     const imported = this.importData(JSON.stringify({
       applications,
       profiles,
       privacy,
       activeProfileId: profiles[0] && typeof profiles[0] === 'object' ? (profiles[0] as Record<string, unknown>).id : '',
-      interviewCache: {},
-      matchCache: {},
+      interviewCache,
+      matchCache,
     }));
     if (!imported) throw new Error('Cloud data does not match the CareerPilot schema.');
     return {
       applications: applications.length,
       profiles: profiles.length,
       resumes: profiles.reduce((count, profile) => count + profile.resumeVersions.length, 0),
+      atsResults: atsResults.length,
+      interviewDossiers: interviewDossiers.length,
     };
   },
 
