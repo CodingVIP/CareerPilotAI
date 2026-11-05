@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, ShieldCheck, Download, Upload, RefreshCw, CheckCircle2, Lock } from 'lucide-react';
 import { UserPrivacySettings } from '../../types/job';
 import { storageService } from '../../services/storage';
+import { Dialog } from '../common/Dialog';
 
 interface PrivacyModalProps {
   isOpen: boolean;
@@ -91,8 +92,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
+    <Dialog open={isOpen} title="Privacy Controls and Data Synchronization" onClose={onClose} className="max-w-lg overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-2">
@@ -236,7 +236,6 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
             Done
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };

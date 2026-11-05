@@ -1,6 +1,7 @@
 import React from 'react';
-import { AlertTriangle, RefreshCw, Trash2, X } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
 import { PendingSyncOperation } from '../../services/sync';
+import { Dialog } from './Dialog';
 
 interface SyncConflictPanelProps {
   conflicts: PendingSyncOperation[];
@@ -15,16 +16,12 @@ export const SyncConflictPanel: React.FC<SyncConflictPanelProps> = ({
   onDiscard,
   onClose,
 }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-labelledby="sync-conflicts-title">
-    <div className="w-full max-w-lg rounded-xl border border-amber-200 bg-white shadow-xl dark:border-amber-900 dark:bg-slate-900">
+  <Dialog open={conflicts.length > 0} title="Sync conflicts" onClose={onClose} className="max-w-lg border-amber-200 dark:border-amber-900">
       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
         <div className="flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-amber-500" />
-          <h2 id="sync-conflicts-title" className="font-semibold">Sync conflicts</h2>
+          <h2 className="font-semibold">Sync conflicts</h2>
         </div>
-        <button onClick={onClose} aria-label="Close sync conflicts" className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-800">
-          <X className="h-4 w-4" />
-        </button>
       </div>
       <div className="max-h-[60vh] space-y-3 overflow-y-auto p-5">
         <p className="text-sm text-slate-600 dark:text-slate-400">
@@ -49,6 +46,5 @@ export const SyncConflictPanel: React.FC<SyncConflictPanelProps> = ({
           </div>
         ))}
       </div>
-    </div>
-  </div>
+  </Dialog>
 );
