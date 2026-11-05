@@ -3,6 +3,10 @@ import { applySyncOperation, ensureUser, SyncOperationInput } from './db/reposit
 
 export const inngest = new Inngest({ id: 'careerpilot-ai' });
 
+export function isInngestConfigured(): boolean {
+  return Boolean(process.env.INNGEST_EVENT_KEY && process.env.INNGEST_SIGNING_KEY);
+}
+
 export const processSyncOperations = inngest.createFunction(
   {
     id: 'process-cloud-sync-operations',

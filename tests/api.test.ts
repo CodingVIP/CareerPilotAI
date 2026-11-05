@@ -10,6 +10,7 @@ test('health endpoint reports safe capability flags', async () => {
   assert.equal(typeof response.body.databaseConfigured, 'boolean');
   assert.equal(typeof response.body.authConfigured, 'boolean');
   assert.equal(typeof response.body.distributedRateLimitingConfigured, 'boolean');
+  assert.equal(typeof response.body.inngestConfigured, 'boolean');
   assert.match(response.headers['x-request-id'], /^[A-Za-z0-9._-]+$/);
 });
 

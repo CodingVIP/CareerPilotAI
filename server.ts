@@ -21,7 +21,7 @@ import {
 } from './src/server/db/repository';
 import { decodeResumeData, deletePrivateResume, readPrivateResume, uploadPrivateResume } from './src/server/blob';
 import { isDistributedRateLimitingConfigured, rateLimit } from './src/server/rateLimit';
-import { inngest, inngestFunctions } from './src/server/inngest';
+import { inngest, inngestFunctions, isInngestConfigured } from './src/server/inngest';
 import { serve as serveInngest } from 'inngest/express';
 import { validateAtsResult, validateInterviewResult, validateScrapeResult } from './src/server/aiValidation';
 import { requestObservability } from './src/server/observability';
@@ -745,6 +745,7 @@ app.get('/api/health', (_req, res) => {
     databaseConfigured: Boolean(process.env.DATABASE_URL),
     authConfigured: Boolean(process.env.CLERK_SECRET_KEY || process.env.API_AUTH_TOKEN),
     distributedRateLimitingConfigured: isDistributedRateLimitingConfigured(),
+    inngestConfigured: isInngestConfigured(),
   });
 });
 
