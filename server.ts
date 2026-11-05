@@ -23,6 +23,7 @@ import { decodeResumeData, deletePrivateResume, readPrivateResume, uploadPrivate
 import { isDistributedRateLimitingConfigured, rateLimit } from './src/server/rateLimit';
 import { inngest, inngestFunctions } from './src/server/inngest';
 import { serve as serveInngest } from 'inngest/express';
+import { validateAtsResult, validateInterviewResult, validateScrapeResult } from './src/server/aiValidation';
 
 dotenv.config();
 
@@ -1173,20 +1174,26 @@ Return valid JSON matching the schema.`;
         });
       }, 2, 600);
 
-      const parsedData = JSON.parse(response.text || '{}');
+      const parsedData = validateScrapeResult(JSON.parse(response.text || '{}'));
+      const company = typeof parsedData.company === 'string' ? parsedData.company : parsedFromHtml.company;
+      const role = typeof parsedData.role === 'string' ? parsedData.role : parsedFromHtml.role;
+      const location = typeof parsedData.location === 'string' ? parsedData.location : parsedFromHtml.location;
+      const jobType = typeof parsedData.jobType === 'string' ? parsedData.jobType : parsedFromHtml.jobType;
+      const description = typeof parsedData.description === 'string' ? parsedData.description : parsedFromHtml.description;
+      const rawDescription = typeof parsedData.rawDescription === 'string' ? parsedData.rawDescription : undefined;
       const sanitizedRaw = sanitizeRichTextHtml(
-        parsedData.rawDescription || parsedFromHtml.rawDescription || parsedData.description
+        rawDescription || parsedFromHtml.rawDescription || description
       );
 
       return res.json({
         success: true,
         isFallback: false,
         data: {
-          company: parsedData.company || parsedFromHtml.company,
-          role: parsedData.role || parsedFromHtml.role,
-          location: parsedData.location || parsedFromHtml.location,
-          jobType: ['remote', 'hybrid', 'onsite'].includes(parsedData.jobType?.toLowerCase())
-            ? parsedData.jobSchemaType.toLowerCase()
+          company,
+          role,
+          location,
+          jobType: ['remote', 'hybrid', 'onsite'].includes(jobType.toLowerCase())
+            ? jobType
             : parsedFromHtml.jobType,
           salaryMin: parsedData.salaryMin || parsedFromHtml.salaryMin || undefined,
           salaryMax: parsedData.salaryMax || parsedFromHtml.salaryMax || undefined,
@@ -1329,7 +1336,7 @@ Perform a thorough, realistic keyword match and ATS audit:
       });
     }, 3, 1000);
 
-    const parsed = JSON.parse(response.text || '{}');
+    const parsed = validateAtsResult(JSON.parse(response.text || '{}'));
     return res.json({
       success: true,
       data: {
@@ -1516,10 +1523,11 @@ Format your response as clean JSON with this exact structure:
       parsedJson = JSON.parse(fallbackResponse.text || '{}');
     }
 
+    const validatedInterview = validateInterviewResult(parsedJson);
     return res.json({
       success: true,
       data: {
-        ...parsedJson,
+        ...validatedInterview,
         groundingSources: sources.slice(0, 6),
         generatedAt: new Date().toISOString(),
       },
