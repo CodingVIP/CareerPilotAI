@@ -26,6 +26,10 @@ function writeQueue(queue: PendingSyncOperation[]): void {
   localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
 }
 
+function updateOperation(id: string, update: Partial<PendingSyncOperation>): void {
+  writeQueue(readQueue().map((operation) => (operation.id === id ? { ...operation, ...update } : operation)));
+}
+
 export const syncService = {
   enqueue(operation: Omit<PendingSyncOperation, 'createdAt' | 'status'>): void {
     const queue = readQueue();
@@ -41,6 +45,14 @@ export const syncService = {
 
   getConflicts(): PendingSyncOperation[] {
     return readQueue().filter((operation) => operation.status === 'conflict');
+  },
+
+  retryConflict(id: string): void {
+    updateOperation(id, { status: 'pending' });
+  },
+
+  discard(id: string): void {
+    writeQueue(readQueue().filter((operation) => operation.id !== id));
   },
 
   async flush(): Promise<{ applied: number; conflicts: number }> {

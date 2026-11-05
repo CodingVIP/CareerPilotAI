@@ -19,6 +19,8 @@ import {
   ToastMessage,
 } from './types/job';
 import { Briefcase, FileText, Target, Sparkles } from 'lucide-react';
+import { syncService, PendingSyncOperation } from './services/sync';
+import { SyncConflictPanel } from './components/common/SyncConflictPanel';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('applications');
@@ -28,6 +30,8 @@ export default function App() {
   const [privacy, setPrivacy] = useState<UserPrivacySettings>(storageService.getPrivacySettings());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [syncConflicts, setSyncConflicts] = useState<PendingSyncOperation[]>([]);
+  const [showConflicts, setShowConflicts] = useState(false);
 
   // Pre-selected application for direct jump from pipeline card to ATS or Interview Prep
   const [selectedForAts, setSelectedForAts] = useState<JobApplication | null>(null);
@@ -36,10 +40,60 @@ export default function App() {
   // Initialize data on mount
   useEffect(() => {
     loadData();
+    const flushSync = async () => {
+      if (!storageService.getPrivacySettings().cloudSyncEnabled || !navigator.onLine) return;
+      try {
+        const result = await syncService.flush();
+        setSyncConflicts(syncService.getConflicts());
+        if (result.applied) addToast({ type: 'success', title: 'Changes synchronized', description: `${result.applied} local change${result.applied === 1 ? '' : 's'} uploaded.` });
+      } catch {
+        // A missing login or cloud configuration should not interrupt local-first use.
+      } finally {
+      }
+    };
+    void flushSync();
+    const handleOnline = () => void flushSync();
     const handleStorage = () => loadData();
     window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('online', handleOnline);
+    };
   }, []);
+
+  const queueChange = (
+    entityType: PendingSyncOperation['entityType'],
+    entityId: string,
+    operation: PendingSyncOperation['operation'],
+    payload: Record<string, unknown>,
+    baseUpdatedAt?: string,
+  ) => {
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `sync-${Date.now()}-${Math.random()}`;
+    syncService.enqueue({ id, entityType, entityId, operation, payload, baseUpdatedAt });
+  };
+
+  const profilePayload = (profile: JobProfile): Record<string, unknown> => ({
+    id: profile.id,
+    name: profile.name,
+    targetRole: profile.targetRole,
+    summary: profile.summary,
+    skills: profile.skills,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
+  });
+
+  const resumePayload = (profileId: string, version: ResumeVersion): Record<string, unknown> => ({
+    id: version.id,
+    profileId,
+    versionName: version.versionName,
+    content: version.content,
+    tags: version.tags,
+    isDefault: version.isDefault,
+    fileType: version.fileType,
+    fileSize: version.fileSize,
+    uploadedAt: version.uploadedAt,
+  });
 
   const loadData = () => {
     const apps = storageService.getApplications();
@@ -69,6 +123,7 @@ export default function App() {
   // Applications Handlers
   const handleAddApplication = (newApp: JobApplication) => {
     storageService.addApplication(newApp);
+    queueChange('application', newApp.id, 'upsert', newApp as unknown as Record<string, unknown>);
     setApplications(storageService.getApplications());
     addToast({
       type: 'success',
@@ -78,7 +133,9 @@ export default function App() {
   };
 
   const handleUpdateApplication = (updatedApp: JobApplication) => {
+    const previous = applications.find((app) => app.id === updatedApp.id);
     storageService.updateApplication(updatedApp);
+    queueChange('application', updatedApp.id, 'upsert', updatedApp as unknown as Record<string, unknown>, previous?.updatedAt);
     setApplications(storageService.getApplications());
     addToast({
       type: 'info',
@@ -88,7 +145,9 @@ export default function App() {
   };
 
   const handleDeleteApplication = (id: string) => {
+    const previous = applications.find((app) => app.id === id);
     storageService.deleteApplication(id);
+    if (previous) queueChange('application', id, 'delete', {}, previous.updatedAt);
     setApplications(storageService.getApplications());
     addToast({
       type: 'warning',
@@ -100,6 +159,7 @@ export default function App() {
   // Profiles & Resumes Handlers
   const handleAddProfile = (newProfile: JobProfile) => {
     storageService.addProfile(newProfile);
+    queueChange('profile', newProfile.id, 'upsert', profilePayload(newProfile));
     setProfiles(storageService.getProfiles());
     setActiveProfileId(newProfile.id);
     storageService.setActiveProfileId(newProfile.id);
@@ -111,7 +171,9 @@ export default function App() {
   };
 
   const handleUpdateProfile = (updatedProfile: JobProfile) => {
+    const previous = profiles.find((profile) => profile.id === updatedProfile.id);
     storageService.updateProfile(updatedProfile);
+    queueChange('profile', updatedProfile.id, 'upsert', profilePayload(updatedProfile), previous?.updatedAt);
     setProfiles(storageService.getProfiles());
     addToast({
       type: 'info',
@@ -121,7 +183,9 @@ export default function App() {
   };
 
   const handleDeleteProfile = (id: string) => {
+    const previous = profiles.find((profile) => profile.id === id);
     storageService.deleteProfile(id);
+    if (previous) queueChange('profile', id, 'delete', {}, previous.updatedAt);
     const updated = storageService.getProfiles();
     setProfiles(updated);
     if (activeProfileId === id && updated.length > 0) {
@@ -137,6 +201,7 @@ export default function App() {
 
   const handleAddResumeVersion = (profileId: string, version: ResumeVersion) => {
     storageService.addResumeVersion(profileId, version);
+    queueChange('resume', version.id, 'upsert', resumePayload(profileId, version));
     setProfiles(storageService.getProfiles());
     addToast({
       type: 'success',
@@ -146,7 +211,9 @@ export default function App() {
   };
 
   const handleUpdateResumeVersion = (profileId: string, version: ResumeVersion) => {
+    const previous = profiles.find((profile) => profile.id === profileId)?.resumeVersions.find((item) => item.id === version.id);
     storageService.updateResumeVersion(profileId, version);
+    queueChange('resume', version.id, 'upsert', resumePayload(profileId, version), previous?.uploadedAt);
     setProfiles(storageService.getProfiles());
     addToast({
       type: 'info',
@@ -156,7 +223,9 @@ export default function App() {
   };
 
   const handleDeleteResumeVersion = (profileId: string, versionId: string) => {
+    const previous = profiles.find((profile) => profile.id === profileId)?.resumeVersions.find((item) => item.id === versionId);
     storageService.deleteResumeVersion(profileId, versionId);
+    if (previous) queueChange('resume', versionId, 'delete', { profileId }, previous.uploadedAt);
     setProfiles(storageService.getProfiles());
     addToast({
       type: 'warning',
@@ -186,8 +255,10 @@ export default function App() {
         applicationCount={applications.length}
         privacy={privacy}
         onUpdatePrivacy={(newPrivacy) => {
+          const previous = privacy;
           setPrivacy(newPrivacy);
           storageService.savePrivacySettings(newPrivacy);
+          queueChange('privacy', 'current', 'upsert', newPrivacy as unknown as Record<string, unknown>, previous.lastSyncedAt);
           addToast({
             type: 'info',
             title: 'Privacy Preferences Saved',
@@ -300,6 +371,30 @@ export default function App() {
       </div>
 
       {/* Actionable Toasts */}
+      {syncConflicts.length > 0 && (
+        <button
+          onClick={() => setShowConflicts(true)}
+          className="fixed bottom-20 right-4 z-40 rounded-lg bg-amber-500 px-3 py-2 text-xs font-medium text-white shadow-lg"
+        >
+          {syncConflicts.length} sync conflict{syncConflicts.length === 1 ? '' : 's'}
+        </button>
+      )}
+      {showConflicts && (
+        <SyncConflictPanel
+          conflicts={syncConflicts}
+          onRetry={(id) => {
+            syncService.retryConflict(id);
+            setSyncConflicts(syncService.getConflicts());
+            void syncService.flush().then(() => setSyncConflicts(syncService.getConflicts())).catch(() => undefined);
+          }}
+          onDiscard={(id) => {
+            syncService.discard(id);
+            setSyncConflicts(syncService.getConflicts());
+            if (syncService.getConflicts().length === 0) setShowConflicts(false);
+          }}
+          onClose={() => setShowConflicts(false)}
+        />
+      )}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
