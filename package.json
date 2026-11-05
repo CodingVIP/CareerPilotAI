@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "test": "tsx --test tests/**/*.test.ts",
+    "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "lint": "tsc --noEmit"
@@ -49,6 +50,7 @@
     "autoprefixer": "^10.4.21",
     "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.0",
+    "@playwright/test": "^1.52.0",
     "supertest": "^7.3.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
