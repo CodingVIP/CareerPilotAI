@@ -763,20 +763,23 @@ app.post('/api/sync/operations', requireApiAuth, rateLimit(60, 60 * 1000), async
     if (!Array.isArray(operations) || operations.length < 1 || operations.length > 50) {
       return res.status(400).json({ error: 'Provide between 1 and 50 sync operations.' });
     }
+    if (
+      operations.some(
+        (operation) =>
+          !operation?.id ||
+          !['application', 'profile', 'resume', 'privacy', 'atsResult', 'interviewDossier'].includes(operation.entityType) ||
+          !['upsert', 'delete'].includes(operation.operation) ||
+          !operation.entityId ||
+          !operation.payload ||
+          typeof operation.payload !== 'object' ||
+          Array.isArray(operation.payload),
+      )
+    ) {
+      return res.status(400).json({ error: 'Invalid sync operation.' });
+    }
     await ensureUser(userId);
     const results = [];
     for (const operation of operations as SyncOperationInput[]) {
-      if (
-        !operation?.id ||
-        !['application', 'profile', 'resume', 'privacy', 'atsResult', 'interviewDossier'].includes(operation.entityType) ||
-        !['upsert', 'delete'].includes(operation.operation) ||
-        !operation.entityId ||
-        !operation.payload ||
-        typeof operation.payload !== 'object' ||
-        Array.isArray(operation.payload)
-      ) {
-        return res.status(400).json({ error: 'Invalid sync operation.' });
-      }
       results.push({ id: operation.id, status: await applySyncOperation(userId, operation) });
     }
     return res.json({ success: true, results });
