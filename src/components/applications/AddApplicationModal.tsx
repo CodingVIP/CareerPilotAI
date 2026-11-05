@@ -16,6 +16,7 @@ import {
 import { JobApplication, JobProfile, ApplicationStatus, JobType } from '../../types/job';
 import { apiService } from '../../services/aiClient';
 import { sanitizeHtml } from '../../utils/sanitizeHtml';
+import { Dialog } from '../common/Dialog';
 
 interface AddApplicationModalProps {
   isOpen: boolean;
@@ -209,8 +210,13 @@ export const AddApplicationModal: React.FC<AddApplicationModalProps> = ({
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="add-application-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-2xl my-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+    <Dialog
+      open={isOpen}
+      title="Add New Job Application"
+      onClose={onClose}
+      showCloseButton={false}
+      className="max-w-2xl overflow-hidden"
+    >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <div>
@@ -653,7 +659,6 @@ export const AddApplicationModal: React.FC<AddApplicationModalProps> = ({
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };

@@ -17,6 +17,7 @@ import {
 import { JobApplication, JobProfile, ApplicationStatus, JobType } from '../../types/job';
 import confetti from 'canvas-confetti';
 import { sanitizeHtml } from '../../utils/sanitizeHtml';
+import { Dialog } from '../common/Dialog';
 
 interface ApplicationDetailModalProps {
   application: JobApplication | null;
@@ -131,8 +132,13 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
   ];
 
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="application-detail-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-3xl my-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+    <Dialog
+      open={isOpen && Boolean(application)}
+      title="Application Details"
+      onClose={onClose}
+      showCloseButton={false}
+      className="max-w-3xl overflow-hidden"
+    >
         {/* Top Header */}
         <div className="flex items-start justify-between px-6 py-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
           <div>
@@ -627,7 +633,6 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
             Close
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };
