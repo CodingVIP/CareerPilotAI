@@ -776,7 +776,7 @@ app.post('/api/sync/operations', requireApiAuth, async (req, res) => {
   try {
     const userId = res.locals.userId as string;
     const operations = req.body?.operations;
-    if (!Array.isArray(operations) || operations.length > 50) {
+    if (!Array.isArray(operations) || operations.length < 1 || operations.length > 50) {
       return res.status(400).json({ error: 'Provide between 1 and 50 sync operations.' });
     }
     await ensureUser(userId);
@@ -784,9 +784,12 @@ app.post('/api/sync/operations', requireApiAuth, async (req, res) => {
     for (const operation of operations as SyncOperationInput[]) {
       if (
         !operation?.id ||
-        !['application', 'profile', 'privacy'].includes(operation.entityType) ||
+        !['application', 'profile', 'resume', 'privacy', 'atsResult', 'interviewDossier'].includes(operation.entityType) ||
         !['upsert', 'delete'].includes(operation.operation) ||
-        typeof operation.payload !== 'object'
+        !operation.entityId ||
+        !operation.payload ||
+        typeof operation.payload !== 'object' ||
+        Array.isArray(operation.payload)
       ) {
         return res.status(400).json({ error: 'Invalid sync operation.' });
       }

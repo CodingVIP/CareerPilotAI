@@ -107,7 +107,7 @@ export async function updateResumeFile(
 
 export interface SyncOperationInput {
   id: string;
-  entityType: 'application' | 'profile' | 'privacy';
+  entityType: 'application' | 'profile' | 'resume' | 'privacy' | 'atsResult' | 'interviewDossier';
   entityId: string;
   operation: 'upsert' | 'delete';
   baseUpdatedAt?: string;
@@ -124,9 +124,9 @@ export async function applySyncOperation(userId: string, input: SyncOperationInp
 
   if (input.entityType === 'application') {
     const values = {
+      ...(input.payload as Record<string, unknown>),
       id: input.entityId,
       userId,
-      ...(input.payload as Record<string, unknown>),
       updatedAt: new Date(),
     } as typeof applications.$inferInsert;
     if (input.operation === 'delete') {
@@ -146,9 +146,9 @@ export async function applySyncOperation(userId: string, input: SyncOperationInp
     }
   } else if (input.entityType === 'profile') {
     const values = {
+      ...(input.payload as Record<string, unknown>),
       id: input.entityId,
       userId,
-      ...(input.payload as Record<string, unknown>),
       updatedAt: new Date(),
     } as typeof profiles.$inferInsert;
     if (input.operation === 'delete') {
@@ -166,16 +166,139 @@ export async function applySyncOperation(userId: string, input: SyncOperationInp
         set: values,
       });
     }
+  } else if (input.entityType === 'resume') {
+    const existingResume = await db
+      .select({ resume: resumeVersions, profileUserId: profiles.userId })
+      .from(resumeVersions)
+      .innerJoin(profiles, eq(resumeVersions.profileId, profiles.id))
+      .where(and(eq(resumeVersions.id, input.entityId), eq(profiles.userId, userId)));
+    const profileId =
+      typeof input.payload.profileId === 'string'
+        ? input.payload.profileId
+        : existingResume[0]?.resume.profileId || '';
+    const profile = await db
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(and(eq(profiles.id, profileId), eq(profiles.userId, userId)));
+    if (input.operation === 'delete') {
+      if (!existingResume.length) return 'conflict';
+      await db
+        .delete(resumeVersions)
+        .where(and(eq(resumeVersions.id, input.entityId), eq(resumeVersions.profileId, profileId)));
+    } else if (!profile.length) return 'conflict';
+    const values = {
+      ...(input.payload as Record<string, unknown>),
+      id: input.entityId,
+      profileId,
+      updatedAt: new Date(),
+    } as typeof resumeVersions.$inferInsert;
+    if (input.operation !== 'delete') {
+      if (input.baseUpdatedAt) {
+        const current = await db
+          .select({ updatedAt: resumeVersions.updatedAt })
+          .from(resumeVersions)
+          .where(eq(resumeVersions.id, input.entityId));
+        if (current[0] && current[0].updatedAt > new Date(input.baseUpdatedAt)) return 'conflict';
+      }
+      await db.insert(resumeVersions).values(values).onConflictDoUpdate({
+        target: resumeVersions.id,
+        set: values,
+      });
+    }
+  } else if (input.entityType === 'atsResult') {
+    const applicationId = typeof input.payload.applicationId === 'string' ? input.payload.applicationId : '';
+    const resumeVersionId = typeof input.payload.resumeVersionId === 'string' ? input.payload.resumeVersionId : '';
+    const existingAts = await db
+      .select()
+      .from(atsResults)
+      .where(and(eq(atsResults.id, input.entityId), eq(atsResults.userId, userId)));
+    const owned = await db
+      .select({ applicationId: applications.id })
+      .from(applications)
+      .where(and(eq(applications.id, applicationId), eq(applications.userId, userId)));
+    const resume = await getOwnedResumeVersion(userId, resumeVersionId);
+    if (input.operation === 'delete') {
+      if (!existingAts.length) return 'conflict';
+      await db.delete(atsResults).where(and(eq(atsResults.id, input.entityId), eq(atsResults.userId, userId)));
+    } else if (!owned.length || !resume) return 'conflict';
+    const values = {
+      ...(input.payload as Record<string, unknown>),
+      id: input.entityId,
+      userId,
+      applicationId,
+      resumeVersionId,
+      updatedAt: new Date(),
+    } as typeof atsResults.$inferInsert;
+    if (input.operation !== 'delete') {
+      if (input.baseUpdatedAt) {
+        const current = await db
+          .select({ updatedAt: atsResults.updatedAt })
+          .from(atsResults)
+          .where(and(eq(atsResults.id, input.entityId), eq(atsResults.userId, userId)));
+        if (current[0] && current[0].updatedAt > new Date(input.baseUpdatedAt)) return 'conflict';
+      }
+      await db.insert(atsResults).values(values).onConflictDoUpdate({
+        target: atsResults.id,
+        set: values,
+      });
+    }
+  } else if (input.entityType === 'interviewDossier') {
+    const applicationId = typeof input.payload.applicationId === 'string' ? input.payload.applicationId : '';
+    const existingDossier = await db
+      .select()
+      .from(interviewDossiers)
+      .where(and(eq(interviewDossiers.id, input.entityId), eq(interviewDossiers.userId, userId)));
+    const owned = await db
+      .select({ id: applications.id })
+      .from(applications)
+      .where(and(eq(applications.id, applicationId), eq(applications.userId, userId)));
+    if (input.operation === 'delete') {
+      if (!existingDossier.length) return 'conflict';
+      await db
+        .delete(interviewDossiers)
+        .where(and(eq(interviewDossiers.id, input.entityId), eq(interviewDossiers.userId, userId)));
+    } else if (!owned.length) return 'conflict';
+    const values = {
+      ...(input.payload as Record<string, unknown>),
+      id: input.entityId,
+      userId,
+      applicationId,
+      updatedAt: new Date(),
+    } as typeof interviewDossiers.$inferInsert;
+    if (input.operation !== 'delete') {
+      if (input.baseUpdatedAt) {
+        const current = await db
+          .select({ updatedAt: interviewDossiers.updatedAt })
+          .from(interviewDossiers)
+          .where(and(eq(interviewDossiers.id, input.entityId), eq(interviewDossiers.userId, userId)));
+        if (current[0] && current[0].updatedAt > new Date(input.baseUpdatedAt)) return 'conflict';
+      }
+      await db.insert(interviewDossiers).values(values).onConflictDoUpdate({
+        target: interviewDossiers.id,
+        set: values,
+      });
+    }
   } else if (input.entityType === 'privacy') {
     const values = {
-      userId,
       ...(input.payload as Record<string, unknown>),
+      userId,
       updatedAt: new Date(),
     } as typeof privacySettings.$inferInsert;
-    await db.insert(privacySettings).values(values).onConflictDoUpdate({
-      target: privacySettings.userId,
-      set: values,
-    });
+    if (input.operation === 'delete') {
+      await db.delete(privacySettings).where(eq(privacySettings.userId, userId));
+    } else {
+      if (input.baseUpdatedAt) {
+        const current = await db
+          .select({ updatedAt: privacySettings.updatedAt })
+          .from(privacySettings)
+          .where(eq(privacySettings.userId, userId));
+        if (current[0] && current[0].updatedAt > new Date(input.baseUpdatedAt)) return 'conflict';
+      }
+      await db.insert(privacySettings).values(values).onConflictDoUpdate({
+        target: privacySettings.userId,
+        set: values,
+      });
+    }
   }
 
   await db.insert(syncOperations).values({

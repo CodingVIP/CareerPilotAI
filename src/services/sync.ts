@@ -2,7 +2,7 @@ import { getAuthHeaders } from './auth';
 
 export interface PendingSyncOperation {
   id: string;
-  entityType: 'application' | 'profile' | 'privacy';
+  entityType: 'application' | 'profile' | 'resume' | 'privacy' | 'atsResult' | 'interviewDossier';
   entityId: string;
   operation: 'upsert' | 'delete';
   baseUpdatedAt?: string;
