@@ -19,6 +19,8 @@
     "@clerk/react": "^6.18.5",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@upstash/ratelimit": "^2.2.0",
+    "@upstash/redis": "^1.41.0",
     "@vercel/blob": "^2.8.2",
     "@vitejs/plugin-react": "^6.1.1",
     "canvas-confetti": "^1.9.4",

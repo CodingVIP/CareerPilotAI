@@ -20,6 +20,7 @@ import {
   updateResumeFile,
 } from './src/server/db/repository';
 import { decodeResumeData, deletePrivateResume, readPrivateResume, uploadPrivateResume } from './src/server/blob';
+import { isDistributedRateLimitingConfigured, rateLimit } from './src/server/rateLimit';
 
 dotenv.config();
 
@@ -34,7 +35,6 @@ app.use(express.json({ limit: '10mb' }));
 
 const MAX_FETCH_BYTES = 5 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
-const requestBuckets = new Map<string, { startedAt: number; count: number }>();
 const API_AUTH_TOKEN = process.env.API_AUTH_TOKEN;
 
 async function requireApiAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -63,26 +63,6 @@ async function requireApiAuth(req: express.Request, res: express.Response, next:
   }
   res.locals.userId = 'shared-token-user';
   return next();
-}
-
-function rateLimit(limit: number, windowMs: number) {
-  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const key = req.ip || req.socket.remoteAddress || 'unknown';
-    const now = Date.now();
-    for (const [bucketKey, value] of requestBuckets) {
-      if (now - value.startedAt >= windowMs) requestBuckets.delete(bucketKey);
-    }
-    const bucket = requestBuckets.get(key);
-    if (!bucket || now - bucket.startedAt >= windowMs) {
-      requestBuckets.set(key, { startedAt: now, count: 1 });
-      return next();
-    }
-    if (bucket.count >= limit) {
-      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
-    }
-    bucket.count++;
-    return next();
-  };
 }
 
 function isPrivateAddress(address: string): boolean {
@@ -758,6 +738,7 @@ app.get('/api/health', (_req, res) => {
     timestamp: new Date().toISOString(),
     databaseConfigured: Boolean(process.env.DATABASE_URL),
     authConfigured: Boolean(process.env.CLERK_SECRET_KEY || process.env.API_AUTH_TOKEN),
+    distributedRateLimitingConfigured: isDistributedRateLimitingConfigured(),
   });
 });
 
@@ -772,7 +753,7 @@ app.get('/api/sync/bootstrap', requireApiAuth, async (_req, res) => {
   }
 });
 
-app.post('/api/sync/operations', requireApiAuth, async (req, res) => {
+app.post('/api/sync/operations', requireApiAuth, rateLimit(60, 60 * 1000), async (req, res) => {
   try {
     const userId = res.locals.userId as string;
     const operations = req.body?.operations;
