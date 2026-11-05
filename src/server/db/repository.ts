@@ -80,6 +80,31 @@ export async function ensureUser(userId: string): Promise<void> {
   await db.insert(users).values({ id: userId }).onConflictDoNothing();
 }
 
+export async function getOwnedResumeVersion(userId: string, resumeId: string) {
+  const db = requireDatabase();
+  const rows = await db
+    .select({ resume: resumeVersions })
+    .from(resumeVersions)
+    .innerJoin(profiles, eq(resumeVersions.profileId, profiles.id))
+    .where(and(eq(resumeVersions.id, resumeId), eq(profiles.userId, userId)));
+  return rows[0]?.resume || null;
+}
+
+export async function updateResumeFile(
+  userId: string,
+  resumeId: string,
+  file: { filePath: string; fileType: string; fileSize: number },
+): Promise<boolean> {
+  const db = requireDatabase();
+  const owned = await getOwnedResumeVersion(userId, resumeId);
+  if (!owned) return false;
+  const result = await db
+    .update(resumeVersions)
+    .set({ ...file, uploadedAt: new Date(), updatedAt: new Date() })
+    .where(eq(resumeVersions.id, resumeId));
+  return result.count > 0;
+}
+
 export interface SyncOperationInput {
   id: string;
   entityType: 'application' | 'profile' | 'privacy';

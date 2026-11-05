@@ -11,7 +11,15 @@ import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import { createServer as createViteServer } from 'vite';
 import { verifyToken } from '@clerk/backend';
-import { applySyncOperation, ensureUser, getUserSnapshot, SyncOperationInput } from './src/server/db/repository';
+import {
+  applySyncOperation,
+  ensureUser,
+  getOwnedResumeVersion,
+  getUserSnapshot,
+  SyncOperationInput,
+  updateResumeFile,
+} from './src/server/db/repository';
+import { decodeResumeData, deletePrivateResume, readPrivateResume, uploadPrivateResume } from './src/server/blob';
 
 dotenv.config();
 
@@ -788,6 +796,59 @@ app.post('/api/sync/operations', requireApiAuth, async (req, res) => {
   } catch (error) {
     console.error('Cloud sync failed:', error);
     return res.status(503).json({ error: 'Cloud persistence is not configured or unavailable.' });
+  }
+});
+
+app.post('/api/resumes/:resumeId/file', requireApiAuth, rateLimit(20, 15 * 60 * 1000), async (req, res) => {
+  try {
+    const userId = res.locals.userId as string;
+    const { base64, fileType } = req.body || {};
+    if (typeof base64 !== 'string' || typeof fileType !== 'string') {
+      return res.status(400).json({ error: 'Resume file data and type are required.' });
+    }
+    const resume = await getOwnedResumeVersion(userId, req.params.resumeId);
+    if (!resume) return res.status(404).json({ error: 'Resume version not found.' });
+    const buffer = decodeResumeData(base64, fileType.toLowerCase());
+    const blob = await uploadPrivateResume(userId, resume.id, fileType.toLowerCase(), buffer);
+    await updateResumeFile(userId, resume.id, {
+      filePath: blob.pathname,
+      fileType: fileType.toLowerCase(),
+      fileSize: blob.size,
+    });
+    return res.json({ success: true, data: { filePath: blob.pathname, fileType, fileSize: blob.size } });
+  } catch (error) {
+    console.error('Private resume upload failed:', error);
+    return res.status(503).json({ error: 'Unable to store the private resume file.' });
+  }
+});
+
+app.get('/api/resumes/:resumeId/file', requireApiAuth, async (req, res) => {
+  try {
+    const userId = res.locals.userId as string;
+    const resume = await getOwnedResumeVersion(userId, req.params.resumeId);
+    if (!resume?.filePath) return res.status(404).json({ error: 'Resume file not found.' });
+    const blob = await readPrivateResume(resume.filePath);
+    if (!blob || blob.statusCode !== 200) return res.status(404).json({ error: 'Resume file not found.' });
+    res.setHeader('Content-Type', blob.blob.contentType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${resume.versionName}.${resume.fileType || 'bin'}"`);
+    return res.status(200).send(Buffer.from(await new Response(blob.stream).arrayBuffer()));
+  } catch (error) {
+    console.error('Private resume download failed:', error);
+    return res.status(503).json({ error: 'Unable to retrieve the private resume file.' });
+  }
+});
+
+app.delete('/api/resumes/:resumeId/file', requireApiAuth, async (req, res) => {
+  try {
+    const userId = res.locals.userId as string;
+    const resume = await getOwnedResumeVersion(userId, req.params.resumeId);
+    if (!resume?.filePath) return res.status(404).json({ error: 'Resume file not found.' });
+    await deletePrivateResume(resume.filePath);
+    await updateResumeFile(userId, resume.id, { filePath: '', fileType: '', fileSize: 0 });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Private resume deletion failed:', error);
+    return res.status(503).json({ error: 'Unable to delete the private resume file.' });
   }
 });
 

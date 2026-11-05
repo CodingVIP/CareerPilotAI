@@ -19,6 +19,7 @@
     "@clerk/react": "^6.18.5",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@vercel/blob": "^2.8.2",
     "@vitejs/plugin-react": "^6.1.1",
     "canvas-confetti": "^1.9.4",
     "cheerio": "^1.2.0",
@@ -47,5 +48,8 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "zod": "^4.6.7"
   }
 }
