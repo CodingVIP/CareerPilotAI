@@ -38,16 +38,30 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
   onGoToAtsMatch,
   onGoToInterviewPrep,
 }) => {
-  if (!isOpen || !application) return null;
-
   const [activeTab, setActiveTab] = useState<'overview' | 'richPosting'>('overview');
   const [copiedRaw, setCopiedRaw] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
-  const [formData, setFormData] = useState<JobApplication>(application);
+  const [formData, setFormData] = useState<JobApplication>(
+    application || {
+      id: '',
+      company: '',
+      role: '',
+      url: '',
+      status: 'wishlist',
+      salaryCurrency: 'USD',
+      location: '',
+      jobType: 'remote',
+      requirements: [],
+      description: '',
+      notes: '',
+      createdAt: '',
+      updatedAt: '',
+    }
+  );
 
   const handleCopyRaw = () => {
-    const content = application.rawDescription || application.description || '';
+    const content = formData.rawDescription || formData.description || '';
     const temp = document.createElement('div');
     temp.innerHTML = content;
     navigator.clipboard.writeText(temp.innerText || content);
@@ -87,6 +101,8 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
     onUpdate(formData);
     setIsEditing(false);
   };
+
+  if (!isOpen || !application) return null;
 
   const handlePerformDelete = () => {
     onDelete(application.id);

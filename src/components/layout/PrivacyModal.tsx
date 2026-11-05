@@ -24,8 +24,6 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
 
-  if (!isOpen) return null;
-
   const handleToggleSync = () => {
     const updated = {
       ...settings,
@@ -85,6 +83,8 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
     onDataImported();
     onClose();
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">

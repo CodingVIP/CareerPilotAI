@@ -3,7 +3,9 @@ import http from 'http';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI, Type } from '@google/genai';
+import dns from 'node:dns/promises';
+import net from 'node:net';
+import { AIProvider, createAIProvider } from './aiProvider';
 import * as cheerio from 'cheerio';
 // @ts-ignore
 import { PDFParse } from 'pdf-parse';
@@ -21,18 +23,128 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(express.json({ limit: '10mb' }));
 
+const MAX_FETCH_BYTES = 5 * 1024 * 1024;
+const MAX_REDIRECTS = 3;
+const requestBuckets = new Map<string, { startedAt: number; count: number }>();
+
+function rateLimit(limit: number, windowMs: number) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const key = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const bucket = requestBuckets.get(key);
+    if (!bucket || now - bucket.startedAt >= windowMs) {
+      requestBuckets.set(key, { startedAt: now, count: 1 });
+      return next();
+    }
+    if (bucket.count >= limit) {
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    }
+    bucket.count++;
+    return next();
+  };
+}
+
+function isPrivateAddress(address: string): boolean {
+  if (net.isIPv4(address)) {
+    const [a, b] = address.split('.').map(Number);
+    return (
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a === 0
+    );
+  }
+  if (net.isIPv6(address)) {
+    const normalized = address.toLowerCase();
+    return (
+      normalized === '::1' ||
+      normalized === '::' ||
+      normalized.startsWith('fc') ||
+      normalized.startsWith('fd') ||
+      normalized.startsWith('fe8') ||
+      normalized.startsWith('fe9') ||
+      normalized.startsWith('fea') ||
+      normalized.startsWith('feb')
+    );
+  }
+  return true;
+}
+
+async function assertPublicHttpUrl(rawUrl: string): Promise<URL> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('Please provide a valid job posting URL.');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error('Only public HTTP(S) job posting URLs are supported.');
+  }
+  const addresses = await dns.lookup(parsed.hostname, { all: true, verbatim: true });
+  if (!addresses.length || addresses.some(({ address }) => isPrivateAddress(address))) {
+    throw new Error('The requested URL resolves to a private or unavailable network address.');
+  }
+  return parsed;
+}
+
+async function fetchPublicUrl(rawUrl: string, init: RequestInit = {}): Promise<Response> {
+  let current = await assertPublicHttpUrl(rawUrl);
+  for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
+    const response = await fetch(current, { ...init, redirect: 'manual' });
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      const contentLength = Number(response.headers.get('content-length') || 0);
+      if (contentLength > MAX_FETCH_BYTES) {
+        throw new Error('The remote response is too large to process.');
+      }
+      return response;
+    }
+    const location = response.headers.get('location');
+    if (!location || redirect === MAX_REDIRECTS) {
+      throw new Error('The remote URL redirected too many times.');
+    }
+
+    current = await assertPublicHttpUrl(new URL(location, current).toString());
+  }
+  throw new Error('The remote URL redirected too many times.');
+}
+
+async function readResponseText(response: Response): Promise<string> {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_FETCH_BYTES) {
+        await reader.cancel();
+        throw new Error('The remote response is too large to process.');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 // Shared Gemini Client with required header
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
-});
+const ai: AIProvider = createAIProvider();
+const SchemaType = {
+  OBJECT: 'object',
+  STRING: 'string',
+  NUMBER: 'number',
+  INTEGER: 'integer',
+  ARRAY: 'array',
+} as const;
+const DEFAULT_MODEL = process.env.AI_MODEL || 'gemini-3.8-flash';
 
 // Resilient API Call Helper with Exponential Backoff
-async function callGeminiWithRetry<T>(
+async function callAIWithRetry<T>(
   operation: () => Promise<T>,
   retries = 3,
   delayMs = 1000
@@ -53,7 +165,7 @@ async function callGeminiWithRetry<T>(
 
       if (isTransient && attempt < retries) {
         console.warn(
-          `Gemini API transient spike (attempt ${attempt}/${retries}): ${errorMessage}. Retrying in ${delayMs}ms...`
+          `AI provider transient spike (attempt ${attempt}/${retries}): ${errorMessage}. Retrying in ${delayMs}ms...`
         );
         await new Promise((resolve) => setTimeout(resolve, delayMs));
         delayMs *= 2;
@@ -206,11 +318,12 @@ function cleanHeadlessContent(rawText: string): string {
 // Tier 2 Universal Headless Reader: renders modern client-side SPAs (Microsoft, Workday, Greenhouse, etc.)
 async function fetchUniversalHeadless(targetUrl: string): Promise<string | null> {
   try {
+    await assertPublicHttpUrl(targetUrl);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 14000);
     const readerUrl = `https://r.jina.ai/${targetUrl}`;
 
-    const response = await fetch(readerUrl, {
+    const response = await fetchPublicUrl(readerUrl, {
       signal: controller.signal,
       headers: {
         Accept: 'text/plain, text/markdown',
@@ -225,7 +338,7 @@ async function fetchUniversalHeadless(targetUrl: string): Promise<string | null>
       return null;
     }
 
-    const text = await response.text();
+    const text = await readResponseText(response);
     if (!text || text.trim().length < 150) {
       return null;
     }
@@ -594,7 +707,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Document Upload & Parsing Endpoint (PDF, DOCX, TXT, MD)
-app.post('/api/documents/parse', async (req, res) => {
+app.post('/api/documents/parse', rateLimit(20, 15 * 60 * 1000), async (req, res) => {
   try {
     const { base64, fileName, fileType } = req.body;
 
@@ -603,7 +716,13 @@ app.post('/api/documents/parse', async (req, res) => {
     }
 
     const cleanBase64 = base64.replace(/^data:[^;]+;base64,/, '');
+    if (cleanBase64.length > 14 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Document exceeds the 10 MB upload limit.' });
+    }
     const buffer = Buffer.from(cleanBase64, 'base64');
+    if (!buffer.length || buffer.length > 10 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Document exceeds the 10 MB upload limit.' });
+    }
     const ext = (fileType || fileName?.split('.').pop() || '').toLowerCase();
 
     let text = '';
@@ -659,7 +778,7 @@ app.post('/api/documents/parse', async (req, res) => {
 });
 
 // 1. Scrape & Extract Job Postings
-app.post('/api/jobs/scrape', async (req, res) => {
+app.post('/api/jobs/scrape', rateLimit(20, 15 * 60 * 1000), async (req, res) => {
   let rawHtml = '';
   let usedHeadless = false;
 
@@ -673,13 +792,24 @@ app.post('/api/jobs/scrape', async (req, res) => {
       });
     }
 
+    // Validate before any external request, including fallback services.
+    if (cleanUrl) {
+      try {
+        await assertPublicHttpUrl(cleanUrl);
+      } catch (validationError) {
+        const message =
+          validationError instanceof Error ? validationError.message : 'Invalid job posting URL.';
+        return res.status(400).json({ error: message });
+      }
+    }
+
     // Tier 1: Direct HTTP fetch for static/server-rendered job boards
     if (cleanUrl.startsWith('http')) {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-        const response = await fetch(cleanUrl, {
+        const response = await fetchPublicUrl(cleanUrl, {
           signal: controller.signal,
           headers: {
             'User-Agent':
@@ -691,7 +821,7 @@ app.post('/api/jobs/scrape', async (req, res) => {
         clearTimeout(timeoutId);
 
         if (response.ok) {
-          rawHtml = await response.text();
+          rawHtml = await readResponseText(response);
         }
       } catch (fetchError) {
         console.warn('Direct fetch failed or timed out:', fetchError);
@@ -757,9 +887,9 @@ Extract:
 
 Return your answer strictly as a JSON object inside a \`\`\`json block with keys: company, role, location, jobType, salaryMin, salaryMax, salaryCurrency, requirements (array of strings), description (string), rawDescription (string of rich-text HTML with preserved lists).`;
 
-        const searchResponse = await callGeminiWithRetry(async () => {
-          return await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+        const searchResponse = await callAIWithRetry(async () => {
+          return await ai.generateContent({
+            model: DEFAULT_MODEL,
             contents: searchPrompt,
             config: {
               tools: [{ googleSearch: {} }],
@@ -784,7 +914,7 @@ Return your answer strictly as a JSON object inside a \`\`\`json block with keys
                 role: parsedSearch.role || parsedFromHtml.role,
                 location: parsedSearch.location || parsedFromHtml.location,
                 jobType: ['remote', 'hybrid', 'onsite'].includes(parsedSearch.jobType?.toLowerCase())
-                  ? parsedSearch.jobType.toLowerCase()
+                  ? parsedSearch.jobSchemaType.toLowerCase()
                   : parsedFromHtml.jobType,
                 salaryMin: parsedSearch.salaryMin || parsedFromHtml.salaryMin || undefined,
                 salaryMax: parsedSearch.salaryMax || parsedFromHtml.salaryMax || undefined,
@@ -835,28 +965,28 @@ Extract:
 Return valid JSON matching the schema.`;
 
     try {
-      const response = await callGeminiWithRetry(async () => {
-        return await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
+      const response = await callAIWithRetry(async () => {
+        return await ai.generateContent({
+          model: DEFAULT_MODEL,
           contents: prompt,
           config: {
             responseMimeType: 'application/json',
             responseSchema: {
-              type: Type.OBJECT,
+              type: SchemaType.OBJECT,
               properties: {
-                company: { type: Type.STRING },
-                role: { type: Type.STRING },
-                location: { type: Type.STRING },
-                jobType: { type: Type.STRING },
-                salaryMin: { type: Type.NUMBER },
-                salaryMax: { type: Type.NUMBER },
-                salaryCurrency: { type: Type.STRING },
+                company: { type: SchemaType.STRING },
+                role: { type: SchemaType.STRING },
+                location: { type: SchemaType.STRING },
+                jobType: { type: SchemaType.STRING },
+                salaryMin: { type: SchemaType.NUMBER },
+                salaryMax: { type: SchemaType.NUMBER },
+                salaryCurrency: { type: SchemaType.STRING },
                 requirements: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
+                  type: SchemaType.ARRAY,
+                  items: { type: SchemaType.STRING },
                 },
-                description: { type: Type.STRING },
-                rawDescription: { type: Type.STRING },
+                description: { type: SchemaType.STRING },
+                rawDescription: { type: SchemaType.STRING },
               },
               required: ['company', 'role', 'location', 'jobType', 'requirements', 'description'],
             },
@@ -877,7 +1007,7 @@ Return valid JSON matching the schema.`;
           role: parsedData.role || parsedFromHtml.role,
           location: parsedData.location || parsedFromHtml.location,
           jobType: ['remote', 'hybrid', 'onsite'].includes(parsedData.jobType?.toLowerCase())
-            ? parsedData.jobType.toLowerCase()
+            ? parsedData.jobSchemaType.toLowerCase()
             : parsedFromHtml.jobType,
           salaryMin: parsedData.salaryMin || parsedFromHtml.salaryMin || undefined,
           salaryMax: parsedData.salaryMax || parsedFromHtml.salaryMax || undefined,
@@ -922,7 +1052,7 @@ Return valid JSON matching the schema.`;
 });
 
 // 2. ATS Resume to Job Keyword Gap Analysis
-app.post('/api/resumes/analyze-match', async (req, res) => {
+app.post('/api/resumes/analyze-match', rateLimit(10, 15 * 60 * 1000), async (req, res) => {
   try {
     const { jobDescription, requirements, resumeText, roleTitle, company } = req.body;
 
@@ -960,52 +1090,52 @@ Perform a thorough, realistic keyword match and ATS audit:
 5. "strengths": Array of 3-4 candidate strengths for this role.
 6. "tailoringAdvice": 1-2 paragraphs of actionable advice for standing out in this specific application.`;
 
-    const response = await callGeminiWithRetry(async () => {
-      return await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+    const response = await callAIWithRetry(async () => {
+      return await ai.generateContent({
+        model: DEFAULT_MODEL,
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
           responseSchema: {
-            type: Type.OBJECT,
+            type: SchemaType.OBJECT,
             properties: {
-              score: { type: Type.INTEGER, description: 'Overall ATS match score 0-100' },
+              score: { type: SchemaType.INTEGER, description: 'Overall ATS match score 0-100' },
               matchedKeywords: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
+                type: SchemaType.ARRAY,
+                items: { type: SchemaType.STRING },
                 description: 'Keywords found in both resume and job description',
               },
               missingKeywords: {
-                type: Type.ARRAY,
+                type: SchemaType.ARRAY,
                 items: {
-                  type: Type.OBJECT,
+                  type: SchemaType.OBJECT,
                   properties: {
-                    keyword: { type: Type.STRING },
-                    importance: { type: Type.STRING, description: 'high, medium, or low' },
-                    category: { type: Type.STRING, description: 'hard-skill, soft-skill, tool, certification' },
-                    context: { type: Type.STRING },
+                    keyword: { type: SchemaType.STRING },
+                    importance: { type: SchemaType.STRING, description: 'high, medium, or low' },
+                    category: { type: SchemaType.STRING, description: 'hard-skill, soft-skill, tool, certification' },
+                    context: { type: SchemaType.STRING },
                   },
                   required: ['keyword', 'importance', 'category', 'context'],
                 },
               },
               bulletSuggestions: {
-                type: Type.ARRAY,
+                type: SchemaType.ARRAY,
                 items: {
-                  type: Type.OBJECT,
+                  type: SchemaType.OBJECT,
                   properties: {
-                    originalBullet: { type: Type.STRING },
-                    suggestedBullet: { type: Type.STRING },
-                    targetKeyword: { type: Type.STRING },
-                    rationale: { type: Type.STRING },
+                    originalBullet: { type: SchemaType.STRING },
+                    suggestedBullet: { type: SchemaType.STRING },
+                    targetKeyword: { type: SchemaType.STRING },
+                    rationale: { type: SchemaType.STRING },
                   },
                   required: ['suggestedBullet', 'targetKeyword', 'rationale'],
                 },
               },
               strengths: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
+                type: SchemaType.ARRAY,
+                items: { type: SchemaType.STRING },
               },
-              tailoringAdvice: { type: Type.STRING },
+              tailoringAdvice: { type: SchemaType.STRING },
             },
             required: [
               'score',
@@ -1040,7 +1170,7 @@ Perform a thorough, realistic keyword match and ATS audit:
 });
 
 // 3. Interview Prep Grounded in Real Internet Experiences
-app.post('/api/interviews/generate-prep', async (req, res) => {
+app.post('/api/interviews/generate-prep', rateLimit(10, 15 * 60 * 1000), async (req, res) => {
   try {
     const { company, role, jobDescription, resumeText } = req.body;
 
@@ -1091,9 +1221,9 @@ Format your response as clean JSON with this exact structure:
 }`;
 
     // Enable Google Search grounding with retry
-    const response = await callGeminiWithRetry(async () => {
-      return await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+    const response = await callAIWithRetry(async () => {
+      return await ai.generateContent({
+        model: DEFAULT_MODEL,
         contents: userPrompt,
         config: {
           tools: [{ googleSearch: {} }],
@@ -1131,58 +1261,58 @@ Format your response as clean JSON with this exact structure:
 
     if (!parsedJson) {
       // Fallback structured generation
-      const fallbackResponse = await callGeminiWithRetry(async () => {
-        return await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
+      const fallbackResponse = await callAIWithRetry(async () => {
+        return await ai.generateContent({
+          model: DEFAULT_MODEL,
           contents: `Convert this interview report into valid JSON:\n\n${responseText.slice(0, 6000)}`,
           config: {
             responseMimeType: 'application/json',
             responseSchema: {
-              type: Type.OBJECT,
+              type: SchemaType.OBJECT,
               properties: {
-                companyOverview: { type: Type.STRING },
-                interviewStages: { type: Type.ARRAY, items: { type: Type.STRING } },
+                companyOverview: { type: SchemaType.STRING },
+                interviewStages: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
                 pastCandidateExperiences: {
-                  type: Type.ARRAY,
+                  type: SchemaType.ARRAY,
                   items: {
-                    type: Type.OBJECT,
+                    type: SchemaType.OBJECT,
                     properties: {
-                      source: { type: Type.STRING },
-                      summary: { type: Type.STRING },
-                      difficulty: { type: Type.STRING },
-                      roleRelevance: { type: Type.STRING },
-                      interviewFormat: { type: Type.STRING },
+                      source: { type: SchemaType.STRING },
+                      summary: { type: SchemaType.STRING },
+                      difficulty: { type: SchemaType.STRING },
+                      roleRelevance: { type: SchemaType.STRING },
+                      interviewFormat: { type: SchemaType.STRING },
                     },
                     required: ['source', 'summary', 'roleRelevance'],
                   },
                 },
                 technicalQuestions: {
-                  type: Type.ARRAY,
+                  type: SchemaType.ARRAY,
                   items: {
-                    type: Type.OBJECT,
+                    type: SchemaType.OBJECT,
                     properties: {
-                      question: { type: Type.STRING },
-                      topic: { type: Type.STRING },
-                      importance: { type: Type.STRING },
-                      sampleAnswer: { type: Type.STRING },
+                      question: { type: SchemaType.STRING },
+                      topic: { type: SchemaType.STRING },
+                      importance: { type: SchemaType.STRING },
+                      sampleAnswer: { type: SchemaType.STRING },
                     },
                     required: ['question', 'topic', 'sampleAnswer'],
                   },
                 },
                 behavioralQuestions: {
-                  type: Type.ARRAY,
+                  type: SchemaType.ARRAY,
                   items: {
-                    type: Type.OBJECT,
+                    type: SchemaType.OBJECT,
                     properties: {
-                      question: { type: Type.STRING },
-                      competency: { type: Type.STRING },
+                      question: { type: SchemaType.STRING },
+                      competency: { type: SchemaType.STRING },
                       starFramework: {
-                        type: Type.OBJECT,
+                        type: SchemaType.OBJECT,
                         properties: {
-                          situation: { type: Type.STRING },
-                          task: { type: Type.STRING },
-                          action: { type: Type.STRING },
-                          result: { type: Type.STRING },
+                          situation: { type: SchemaType.STRING },
+                          task: { type: SchemaType.STRING },
+                          action: { type: SchemaType.STRING },
+                          result: { type: SchemaType.STRING },
                         },
                         required: ['situation', 'task', 'action', 'result'],
                       },
@@ -1190,7 +1320,7 @@ Format your response as clean JSON with this exact structure:
                     required: ['question', 'competency', 'starFramework'],
                   },
                 },
-                tipsForCompany: { type: Type.ARRAY, items: { type: Type.STRING } },
+                tipsForCompany: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
               },
               required: [
                 'companyOverview',

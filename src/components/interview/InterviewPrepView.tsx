@@ -16,7 +16,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { JobApplication, JobProfile, InterviewPrepDossier } from '../../types/job';
-import { apiService } from '../../services/geminiClient';
+import { apiService } from '../../services/aiClient';
 import { storageService } from '../../services/storage';
 
 interface InterviewPrepViewProps {

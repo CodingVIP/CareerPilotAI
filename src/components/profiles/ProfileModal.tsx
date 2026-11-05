@@ -15,8 +15,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onSave,
   initialProfile,
 }) => {
-  if (!isOpen) return null;
-
   const [name, setName] = useState(initialProfile?.name || '');
   const [targetRole, setTargetRole] = useState(initialProfile?.targetRole || '');
   const [summary, setSummary] = useState(initialProfile?.summary || '');
@@ -48,6 +46,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       createdAt: initialProfile?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+
+    if (!isOpen) return null;
 
     onSave(profileToSave);
     onClose();

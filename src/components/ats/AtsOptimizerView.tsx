@@ -14,7 +14,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { JobApplication, JobProfile, KeywordAnalysisResult } from '../../types/job';
-import { apiService } from '../../services/geminiClient';
+import { apiService } from '../../services/aiClient';
 import { storageService } from '../../services/storage';
 
 interface AtsOptimizerViewProps {

@@ -14,7 +14,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { ResumeVersion } from '../../types/job';
-import { apiService } from '../../services/geminiClient';
+import { apiService } from '../../services/aiClient';
 
 interface ResumeVersionModalProps {
   isOpen: boolean;
@@ -31,8 +31,6 @@ export const ResumeVersionModal: React.FC<ResumeVersionModalProps> = ({
   initialVersion,
   profileName,
 }) => {
-  if (!isOpen) return null;
-
   const [versionName, setVersionName] = useState(initialVersion?.versionName || '');
   const [content, setContent] = useState(initialVersion?.content || '');
   const [isDefault, setIsDefault] = useState(initialVersion?.isDefault || false);
@@ -198,6 +196,8 @@ export const ResumeVersionModal: React.FC<ResumeVersionModalProps> = ({
       fileData,
       uploadedAt: initialVersion?.uploadedAt || new Date().toISOString(),
     };
+
+    if (!isOpen) return null;
 
     onSave(versionToSave);
     onClose();

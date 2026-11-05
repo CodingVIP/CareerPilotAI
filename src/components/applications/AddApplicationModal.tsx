@@ -14,7 +14,7 @@ import {
   Check,
 } from 'lucide-react';
 import { JobApplication, JobProfile, ApplicationStatus, JobType } from '../../types/job';
-import { apiService } from '../../services/geminiClient';
+import { apiService } from '../../services/aiClient';
 
 interface AddApplicationModalProps {
   isOpen: boolean;
@@ -58,8 +58,6 @@ export const AddApplicationModal: React.FC<AddApplicationModalProps> = ({
   );
   const [notes, setNotes] = useState('');
   const [appliedDate, setAppliedDate] = useState(new Date().toISOString().slice(0, 10));
-
-  if (!isOpen) return null;
 
   const currentProfile = profiles.find((p) => p.id === selectedProfileId);
 
@@ -194,6 +192,8 @@ export const AddApplicationModal: React.FC<AddApplicationModalProps> = ({
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+
+    if (!isOpen) return null;
 
     onSave(newApp);
     onClose();

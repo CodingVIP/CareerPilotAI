@@ -123,4 +123,3 @@ export const apiService = {
     return data.data;
   },
 };
-
