@@ -106,3 +106,14 @@ export const syncOperations = pgTable('sync_operations', {
   payload: jsonb('payload').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const aiJobs = pgTable('ai_jobs', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  status: text('status').notNull().default('queued'),
+  payload: jsonb('payload').notNull(),
+  result: jsonb('result'),
+  error: text('error'),
+  ...timestamps,
+});

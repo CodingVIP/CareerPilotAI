@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { database } from './client';
 import {
+  aiJobs,
   applications,
   atsResults,
   interviewDossiers,
@@ -78,6 +79,45 @@ export async function getUserSnapshot(userId: string): Promise<SyncSnapshot> {
 export async function ensureUser(userId: string): Promise<void> {
   const db = requireDatabase();
   await db.insert(users).values({ id: userId }).onConflictDoNothing();
+}
+
+export async function createAiJob(input: {
+  id: string;
+  userId: string;
+  kind: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  if (!database) throw new Error('DATABASE_URL is not configured.');
+  await database.insert(aiJobs).values(input);
+}
+
+export async function updateAiJob(
+  userId: string,
+  id: string,
+  update: { status: string; result?: unknown; error?: string | null },
+): Promise<void> {
+  if (!database) throw new Error('DATABASE_URL is not configured.');
+  await database
+    .update(aiJobs)
+    .set({ ...update, updatedAt: new Date() })
+    .where(and(eq(aiJobs.id, id), eq(aiJobs.userId, userId)));
+}
+
+export async function getAiJob(userId: string, id: string) {
+  if (!database) throw new Error('DATABASE_URL is not configured.');
+  const [job] = await database
+    .select({
+      id: aiJobs.id,
+      kind: aiJobs.kind,
+      status: aiJobs.status,
+      result: aiJobs.result,
+      error: aiJobs.error,
+      createdAt: aiJobs.createdAt,
+      updatedAt: aiJobs.updatedAt,
+    })
+    .from(aiJobs)
+    .where(and(eq(aiJobs.id, id), eq(aiJobs.userId, userId)));
+  return job || null;
 }
 
 export async function getOwnedResumeVersion(userId: string, resumeId: string) {

@@ -14,7 +14,9 @@ import { createServer as createViteServer } from 'vite';
 import { verifyToken } from '@clerk/backend';
 import {
   applySyncOperation,
+  createAiJob,
   ensureUser,
+  getAiJob,
   getOwnedResumeVersion,
   getUserSnapshot,
   SyncOperationInput,
@@ -842,9 +844,23 @@ app.post('/api/ai/jobs', requireApiAuth, rateLimit(10, 15 * 60 * 1000), async (r
       return res.status(413).json({ error: 'AI job payload is too large.' });
     }
     const jobId = crypto.randomUUID();
+    await ensureUser(userId);
+    await createAiJob({ id: jobId, userId, kind, payload });
     await inngest.send({
       name: 'careerpilot/ai.requested',
       data: { userId, jobId, kind: kind as AiJobKind, payload },
+    });
+
+    app.get('/api/ai/jobs/:jobId', requireApiAuth, async (req, res) => {
+      try {
+        const userId = res.locals.userId as string;
+        const job = await getAiJob(userId, req.params.jobId);
+        if (!job) return res.status(404).json({ error: 'AI job not found.' });
+        return res.json({ success: true, job });
+      } catch (error) {
+        console.error('Unable to read AI job:', error);
+        return res.status(503).json({ error: 'AI job status is unavailable.' });
+      }
     });
     return res.status(202).json({ success: true, jobId, kind });
   } catch (error) {

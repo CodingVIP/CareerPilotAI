@@ -30,6 +30,16 @@ export interface QueuedAiJob {
   kind: AiJobKind;
 }
 
+export interface AiJobStatus {
+  id: string;
+  kind: AiJobKind;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  result: unknown;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 function cleanErrorMessage(raw: string): string {
   if (!raw) return 'Operation failed. Please try again.';
   try {
@@ -59,6 +69,14 @@ export const apiService = {
       throw new Error(cleanErrorMessage(data.error || 'Failed to queue AI job.'));
     }
     return data as QueuedAiJob;
+  },
+
+  async getAiJob(jobId: string): Promise<AiJobStatus> {
+    const authHeaders = await getAuthHeaders();
+    const res = await fetch(`/api/ai/jobs/${encodeURIComponent(jobId)}`, { headers: authHeaders });
+    const data = await res.json();
+    if (!res.ok) throw new Error(cleanErrorMessage(data.error || 'Failed to read AI job status.'));
+    return data.job as AiJobStatus;
   },
 
   async scrapeJob(payload: ScrapeJobPayload): Promise<ScrapedJobResponse> {

@@ -1,5 +1,5 @@
 import { Inngest } from 'inngest';
-import { applySyncOperation, ensureUser, SyncOperationInput } from './db/repository';
+import { applySyncOperation, ensureUser, updateAiJob, SyncOperationInput } from './db/repository';
 
 export const inngest = new Inngest({ id: 'careerpilot-ai' });
 
@@ -44,12 +44,11 @@ export const processAiJob = inngest.createFunction(
   },
   async ({ event, step }) => {
     const data = event.data as AiJobEventData;
-    return step.run('accept AI job', async () => ({
-      jobId: data.jobId,
-      userId: data.userId,
-      kind: data.kind,
-      accepted: true,
-    }));
+    await updateAiJob(data.userId, data.jobId, { status: 'processing' });
+    return step.run('accept AI job', async () => {
+      await updateAiJob(data.userId, data.jobId, { status: 'completed', result: null });
+      return { jobId: data.jobId, userId: data.userId, kind: data.kind, completed: true };
+    });
   },
 );
 

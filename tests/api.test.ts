@@ -65,6 +65,11 @@ test('AI jobs reject non-object payloads before enqueueing', async () => {
   assert.equal(response.body.error, 'AI job payload must be an object.');
 });
 
+test('AI job status does not reveal another or missing job', async () => {
+  const response = await request(app).get('/api/ai/jobs/missing-job');
+  assert.equal(response.status, 404);
+});
+
 test('document parser rejects missing upload data', async () => {
   const response = await request(app).post('/api/documents/parse').send({});
   assert.equal(response.status, 400);
