@@ -1,5 +1,6 @@
 import express from 'express';
 import http from 'http';
+import crypto from 'node:crypto';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -21,7 +22,7 @@ import {
 } from './src/server/db/repository';
 import { decodeResumeData, deletePrivateResume, readPrivateResume, uploadPrivateResume } from './src/server/blob';
 import { isDistributedRateLimitingConfigured, rateLimit } from './src/server/rateLimit';
-import { inngest, inngestFunctions, isInngestConfigured } from './src/server/inngest';
+import { AiJobKind, inngest, inngestFunctions, isInngestConfigured } from './src/server/inngest';
 import { serve as serveInngest } from 'inngest/express';
 import { validateAtsResult, validateInterviewResult, validateScrapeResult } from './src/server/aiValidation';
 import { requestObservability } from './src/server/observability';
@@ -821,6 +822,33 @@ app.post('/api/sync/operations/async', requireApiAuth, rateLimit(20, 60 * 1000),
     return res.status(202).json({ success: true, queued: operations.length });
   } catch (error) {
     console.error('Unable to queue cloud sync:', error);
+    return res.status(503).json({ error: 'Background processing is unavailable.' });
+  }
+});
+
+app.post('/api/ai/jobs', requireApiAuth, rateLimit(10, 15 * 60 * 1000), async (req, res) => {
+  try {
+    const userId = res.locals.userId as string;
+    const kind = req.body?.kind;
+    const payload = req.body?.payload;
+    if (!['scrape', 'ats', 'interview'].includes(kind)) {
+      return res.status(400).json({ error: 'Invalid AI job type.' });
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return res.status(400).json({ error: 'AI job payload must be an object.' });
+    }
+    const serializedPayload = JSON.stringify(payload);
+    if (serializedPayload.length > 25_000) {
+      return res.status(413).json({ error: 'AI job payload is too large.' });
+    }
+    const jobId = crypto.randomUUID();
+    await inngest.send({
+      name: 'careerpilot/ai.requested',
+      data: { userId, jobId, kind: kind as AiJobKind, payload },
+    });
+    return res.status(202).json({ success: true, jobId, kind });
+  } catch (error) {
+    console.error('Unable to queue AI job:', error);
     return res.status(503).json({ error: 'Background processing is unavailable.' });
   }
 });

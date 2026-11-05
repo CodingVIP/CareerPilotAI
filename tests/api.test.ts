@@ -49,6 +49,22 @@ test('async sync endpoint rejects empty batches before enqueueing', async () => 
   assert.match(response.body.error, /between 1 and 50/i);
 });
 
+test('AI jobs reject unknown job types before enqueueing', async () => {
+  const response = await request(app)
+    .post('/api/ai/jobs')
+    .send({ kind: 'unknown', payload: {} });
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error, 'Invalid AI job type.');
+});
+
+test('AI jobs reject non-object payloads before enqueueing', async () => {
+  const response = await request(app)
+    .post('/api/ai/jobs')
+    .send({ kind: 'ats', payload: [] });
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error, 'AI job payload must be an object.');
+});
+
 test('document parser rejects missing upload data', async () => {
   const response = await request(app).post('/api/documents/parse').send({});
   assert.equal(response.status, 400);

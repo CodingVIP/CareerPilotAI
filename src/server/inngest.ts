@@ -7,6 +7,15 @@ export function isInngestConfigured(): boolean {
   return Boolean(process.env.INNGEST_EVENT_KEY && process.env.INNGEST_SIGNING_KEY);
 }
 
+export type AiJobKind = 'scrape' | 'ats' | 'interview';
+
+export interface AiJobEventData {
+  userId: string;
+  jobId: string;
+  kind: AiJobKind;
+  payload: Record<string, unknown>;
+}
+
 export const processSyncOperations = inngest.createFunction(
   {
     id: 'process-cloud-sync-operations',
@@ -27,4 +36,21 @@ export const processSyncOperations = inngest.createFunction(
   },
 );
 
-export const inngestFunctions = [processSyncOperations];
+export const processAiJob = inngest.createFunction(
+  {
+    id: 'process-ai-job',
+    retries: 3,
+    triggers: [{ event: 'careerpilot/ai.requested' }],
+  },
+  async ({ event, step }) => {
+    const data = event.data as AiJobEventData;
+    return step.run('accept AI job', async () => ({
+      jobId: data.jobId,
+      userId: data.userId,
+      kind: data.kind,
+      accepted: true,
+    }));
+  },
+);
+
+export const inngestFunctions = [processSyncOperations, processAiJob];
