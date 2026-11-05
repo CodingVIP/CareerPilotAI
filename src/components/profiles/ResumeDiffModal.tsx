@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, FileText, Check, ArrowRight } from 'lucide-react';
 import { JobProfile, ResumeVersion } from '../../types/job';
+import { Dialog } from '../common/Dialog';
 
 interface ResumeDiffModalProps {
   isOpen: boolean;
@@ -15,22 +16,29 @@ export const ResumeDiffModal: React.FC<ResumeDiffModalProps> = ({
   profile,
   initialVersionId,
 }) => {
+  const [versionAId, setVersionAId] = useState<string>(
+    initialVersionId || profile?.resumeVersions[0]?.id || ''
+  );
+  const [versionBId, setVersionBId] = useState<string>(
+    profile?.resumeVersions.length && profile.resumeVersions.length > 1
+      ? profile.resumeVersions[1]?.id
+      : profile?.resumeVersions[0]?.id || ''
+  );
+
   if (!isOpen || !profile) return null;
 
   const versions = profile.resumeVersions;
-  const [versionAId, setVersionAId] = useState<string>(
-    initialVersionId || versions[0]?.id || ''
-  );
-  const [versionBId, setVersionBId] = useState<string>(
-    versions.length > 1 ? versions[1]?.id : versions[0]?.id || ''
-  );
-
   const versionA = versions.find((v) => v.id === versionAId);
   const versionB = versions.find((v) => v.id === versionBId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-6xl my-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
+    <Dialog
+      open={isOpen && Boolean(profile)}
+      title="Resume Version Comparison & Inspector"
+      onClose={onClose}
+      showCloseButton={false}
+      className="max-w-6xl overflow-hidden"
+    >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40">
           <div>
@@ -139,7 +147,6 @@ export const ResumeDiffModal: React.FC<ResumeDiffModalProps> = ({
             Close Inspector
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };

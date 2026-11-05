@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ResumeVersion } from '../../types/job';
 import { apiService } from '../../services/aiClient';
+import { Dialog } from '../common/Dialog';
 
 interface ResumeVersionModalProps {
   isOpen: boolean;
@@ -218,8 +219,13 @@ export const ResumeVersionModal: React.FC<ResumeVersionModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="resume-modal-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-3xl my-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+    <Dialog
+      open={isOpen}
+      title={initialVersion ? 'Edit Resume Version' : 'Upload & Store Resume Document'}
+      onClose={onClose}
+      showCloseButton={false}
+      className="max-w-3xl overflow-hidden"
+    >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
           <div>
@@ -487,7 +493,6 @@ export const ResumeVersionModal: React.FC<ResumeVersionModalProps> = ({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Dialog>
   );
 };
