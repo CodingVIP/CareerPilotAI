@@ -35,7 +35,7 @@ export function validateScrapeResult(value: unknown): Record<string, unknown> {
 
 export function validateAtsResult(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) throw new Error('AI returned an invalid ATS analysis.');
-  if (typeof value.score !== 'number' || value.score < 0 || value.score > 100) {
+  if (typeof value.score !== 'number' || !Number.isFinite(value.score) || value.score < 0 || value.score > 100) {
     throw new Error('AI returned an invalid ATS score.');
   }
   requireStringArray(value.matchedKeywords, 'matched keywords');
@@ -45,12 +45,21 @@ export function validateAtsResult(value: unknown): Record<string, unknown> {
   const bulletSuggestions = requireRecordArray(value.bulletSuggestions, 'bullet suggestions');
   for (const keyword of missingKeywords) {
     requireString(keyword.keyword, 'missing keyword');
-    requireString(keyword.importance, 'keyword importance');
-    requireString(keyword.category, 'keyword category');
+    if (!['high', 'medium', 'low'].includes(requireString(keyword.importance, 'keyword importance'))) {
+      throw new Error('AI returned an invalid keyword importance.');
+    }
+    if (!['hard-skill', 'soft-skill', 'tool', 'certification'].includes(requireString(keyword.category, 'keyword category'))) {
+      throw new Error('AI returned an invalid keyword category.');
+    }
+    requireString(keyword.context, 'keyword context');
   }
   for (const suggestion of bulletSuggestions) {
-    requireString(suggestion.original, 'original bullet');
-    requireString(suggestion.improved, 'improved bullet');
+    if (suggestion.originalBullet !== undefined && suggestion.originalBullet !== null) {
+      requireString(suggestion.originalBullet, 'original bullet');
+    }
+    requireString(suggestion.suggestedBullet, 'suggested bullet');
+    requireString(suggestion.targetKeyword, 'target keyword');
+    requireString(suggestion.rationale, 'bullet rationale');
   }
   return value;
 }
