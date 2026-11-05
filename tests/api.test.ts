@@ -10,6 +10,12 @@ test('health endpoint reports safe capability flags', async () => {
   assert.equal(typeof response.body.databaseConfigured, 'boolean');
   assert.equal(typeof response.body.authConfigured, 'boolean');
   assert.equal(typeof response.body.distributedRateLimitingConfigured, 'boolean');
+  assert.match(response.headers['x-request-id'], /^[A-Za-z0-9._-]+$/);
+});
+
+test('preserves a valid request correlation id', async () => {
+  const response = await request(app).get('/api/health').set('X-Request-Id', 'e2e-health-42');
+  assert.equal(response.headers['x-request-id'], 'e2e-health-42');
 });
 
 test('sync endpoint rejects malformed batches', async () => {

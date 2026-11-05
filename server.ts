@@ -24,6 +24,7 @@ import { isDistributedRateLimitingConfigured, rateLimit } from './src/server/rat
 import { inngest, inngestFunctions } from './src/server/inngest';
 import { serve as serveInngest } from 'inngest/express';
 import { validateAtsResult, validateInterviewResult, validateScrapeResult } from './src/server/aiValidation';
+import { requestObservability } from './src/server/observability';
 
 dotenv.config();
 
@@ -34,6 +35,7 @@ const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
+app.use(requestObservability);
 app.use(express.json({ limit: '10mb' }));
 app.use('/api/inngest', serveInngest({ client: inngest, functions: inngestFunctions }));
 
