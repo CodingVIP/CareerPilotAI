@@ -15,3 +15,19 @@ test('opens and closes the add application dialog', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 });
+
+test('creates an application and opens its detail dialog', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+
+  await page.getByRole('button', { name: /add application/i }).click();
+  const dialog = page.getByRole('dialog', { name: /add new job application/i });
+  await dialog.getByPlaceholder('e.g. Stripe, Linear').fill('Acme');
+  await dialog.getByPlaceholder('e.g. Staff Frontend Engineer').fill('Senior Engineer');
+  await dialog.getByRole('button', { name: /save to pipeline/i }).click();
+
+  await expect(page.getByText('Senior Engineer', { exact: true })).toBeVisible();
+  await page.getByText('Senior Engineer', { exact: true }).click();
+  await expect(page.getByRole('dialog', { name: /application details/i })).toBeVisible();
+});
