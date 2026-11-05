@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { JobProfile } from '../../types/job';
+import { Dialog } from '../common/Dialog';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -62,8 +63,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="profile-modal-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
+    <Dialog open={isOpen} title={initialProfile ? 'Edit Job Profile' : 'Create New Job Profile'} onClose={onClose} showCloseButton={false} className="max-w-lg overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <h2 id="profile-modal-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">
@@ -182,7 +182,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Dialog>
   );
 };
