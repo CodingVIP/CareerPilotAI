@@ -98,3 +98,35 @@ test('preserves queued changes when synchronization fails', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('flushes queues larger than the API batch limit in chunks', async () => {
+  for (let index = 0; index < 51; index += 1) {
+    syncService.enqueue({
+      id: `op-${index}`,
+      entityType: 'application',
+      entityId: `app-${index}`,
+      operation: 'upsert',
+      payload: { company: `Company ${index}` },
+    });
+  }
+  const originalFetch = globalThis.fetch;
+  const batchSizes: number[] = [];
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as { operations: unknown[] };
+    batchSizes.push(body.operations.length);
+    return new Response(JSON.stringify({
+      results: body.operations.map((_operation, index) => ({
+        id: `op-${batchSizes.length === 1 ? index : 50}`,
+        status: 'applied',
+      })),
+    }), { status: 200 });
+  };
+  try {
+    const result = await syncService.flush();
+    assert.deepEqual(batchSizes, [50, 1]);
+    assert.equal(result.applied, 51);
+    assert.equal(syncService.getPending().length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

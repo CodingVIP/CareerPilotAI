@@ -70,28 +70,36 @@ export const syncService = {
   async flush(): Promise<{ applied: number; conflicts: number }> {
     const pending = this.getPending();
     if (!pending.length) return { applied: 0, conflicts: 0 };
-    const response = await fetch('/api/sync/operations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
-      body: JSON.stringify({ operations: pending }),
-    });
-    const body = (await response.json()) as {
-      results?: Array<{ id: string; status: 'applied' | 'duplicate' | 'conflict' }>;
-      error?: string;
-    };
-    if (!response.ok || !body.results) throw new Error(body.error || 'Unable to synchronize offline changes.');
+    let applied = 0;
+    let conflicts = 0;
+    for (let index = 0; index < pending.length; index += 50) {
+      const batch = pending.slice(index, index + 50);
+      const response = await fetch('/api/sync/operations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await getAuthHeaders()) },
+        body: JSON.stringify({ operations: batch }),
+      });
+      const body = (await response.json()) as {
+        results?: Array<{ id: string; status: 'applied' | 'duplicate' | 'conflict' }>;
+        error?: string;
+      };
+      if (!response.ok || !body.results) {
+        throw new Error(body.error || 'Unable to synchronize offline changes.');
+      }
 
-    const resultMap = new Map(body.results.map((result) => [result.id, result.status]));
-    const queue = readQueue().flatMap((operation) => {
-      const status = resultMap.get(operation.id);
-      if (status === 'conflict') return [{ ...operation, status: 'conflict' as const }];
-      if (status === 'applied' || status === 'duplicate') return [];
-      return [operation];
-    });
-    writeQueue(queue);
+      const resultMap = new Map(body.results.map((result) => [result.id, result.status]));
+      writeQueue(readQueue().flatMap((operation) => {
+        const status = resultMap.get(operation.id);
+        if (status === 'conflict') return [{ ...operation, status: 'conflict' as const }];
+        if (status === 'applied' || status === 'duplicate') return [];
+        return [operation];
+      }));
+      applied += body.results.filter((result) => result.status !== 'conflict').length;
+      conflicts += body.results.filter((result) => result.status === 'conflict').length;
+    }
     return {
-      applied: body.results.filter((result) => result.status !== 'conflict').length,
-      conflicts: body.results.filter((result) => result.status === 'conflict').length,
+      applied,
+      conflicts,
     };
   },
 };
