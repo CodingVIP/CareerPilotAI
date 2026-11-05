@@ -7,10 +7,11 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 import { AIProvider, createAIProvider } from './aiProvider';
 import * as cheerio from 'cheerio';
-// @ts-ignore
 import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import { createServer as createViteServer } from 'vite';
+import { verifyToken } from '@clerk/backend';
+import { ensureUser, getUserSnapshot } from './src/server/db/repository';
 
 dotenv.config();
 
@@ -26,11 +27,43 @@ app.use(express.json({ limit: '10mb' }));
 const MAX_FETCH_BYTES = 5 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 const requestBuckets = new Map<string, { startedAt: number; count: number }>();
+const API_AUTH_TOKEN = process.env.API_AUTH_TOKEN;
+
+async function requireApiAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (process.env.NODE_ENV !== 'production' && !API_AUTH_TOKEN && !process.env.CLERK_SECRET_KEY) {
+    return next();
+  }
+  const supplied = req.header('authorization')?.replace(/^Bearer\s+/i, '');
+  if (!supplied) {
+    return res.status(401).json({ error: 'Authentication required.' });
+  }
+  if (process.env.CLERK_SECRET_KEY) {
+    try {
+      const claims = await verifyToken(supplied, {
+        secretKey: process.env.CLERK_SECRET_KEY,
+        authorizedParties: process.env.CLERK_AUTHORIZED_PARTIES?.split(',').map((item) => item.trim()),
+      });
+      res.locals.userId = claims.sub;
+      return next();
+    } catch (error) {
+      console.warn('Clerk token verification failed:', error);
+      return res.status(401).json({ error: 'Invalid authentication token.' });
+    }
+  }
+  if (supplied !== API_AUTH_TOKEN) {
+    return res.status(401).json({ error: 'Invalid authentication token.' });
+  }
+  res.locals.userId = 'shared-token-user';
+  return next();
+}
 
 function rateLimit(limit: number, windowMs: number) {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const key = req.ip || req.socket.remoteAddress || 'unknown';
     const now = Date.now();
+    for (const [bucketKey, value] of requestBuckets) {
+      if (now - value.startedAt >= windowMs) requestBuckets.delete(bucketKey);
+    }
     const bucket = requestBuckets.get(key);
     if (!bucket || now - bucket.startedAt >= windowMs) {
       requestBuckets.set(key, { startedAt: now, count: 1 });
@@ -58,9 +91,13 @@ function isPrivateAddress(address: string): boolean {
   }
   if (net.isIPv6(address)) {
     const normalized = address.toLowerCase();
+    if (normalized.startsWith('::ffff:')) {
+      return isPrivateAddress(normalized.slice(7));
+    }
     return (
       normalized === '::1' ||
       normalized === '::' ||
+      normalized.startsWith('::ffff:') ||
       normalized.startsWith('fc') ||
       normalized.startsWith('fd') ||
       normalized.startsWith('fe8') ||
@@ -135,13 +172,15 @@ async function readResponseText(response: Response): Promise<string> {
 // Shared Gemini Client with required header
 const ai: AIProvider = createAIProvider();
 const SchemaType = {
-  OBJECT: 'object',
-  STRING: 'string',
-  NUMBER: 'number',
-  INTEGER: 'integer',
-  ARRAY: 'array',
+  OBJECT: 'OBJECT',
+  STRING: 'STRING',
+  NUMBER: 'NUMBER',
+  INTEGER: 'INTEGER',
+  ARRAY: 'ARRAY',
 } as const;
-const DEFAULT_MODEL = process.env.AI_MODEL || 'gemini-3.8-flash';
+const DEFAULT_MODEL =
+  process.env.AI_MODEL ||
+  (process.env.AI_PROVIDER === 'gemini' || !process.env.AI_PROVIDER ? 'gemini-3.8-flash' : 'local-model');
 
 // Resilient API Call Helper with Exponential Backoff
 async function callAIWithRetry<T>(
@@ -323,26 +362,29 @@ async function fetchUniversalHeadless(targetUrl: string): Promise<string | null>
     const timeout = setTimeout(() => controller.abort(), 14000);
     const readerUrl = `https://r.jina.ai/${targetUrl}`;
 
-    const response = await fetchPublicUrl(readerUrl, {
-      signal: controller.signal,
-      headers: {
+    try {
+      const response = await fetchPublicUrl(readerUrl, {
+        signal: controller.signal,
+        headers: {
         Accept: 'text/plain, text/markdown',
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      },
-    });
-    clearTimeout(timeout);
+        },
+      });
 
-    if (!response.ok) {
-      console.warn(`Universal Headless Reader returned status ${response.status} for ${targetUrl}`);
-      return null;
-    }
+      if (!response.ok) {
+        console.warn(`Universal Headless Reader returned status ${response.status} for ${targetUrl}`);
+        return null;
+      }
 
-    const text = await readResponseText(response);
-    if (!text || text.trim().length < 150) {
-      return null;
+      const text = await readResponseText(response);
+      if (!text || text.trim().length < 150) {
+        return null;
+      }
+      return text;
+    } finally {
+      clearTimeout(timeout);
     }
-    return text;
   } catch (err) {
     console.warn(`Universal Headless Reader request failed for ${targetUrl}:`, err);
     return null;
@@ -703,11 +745,27 @@ function parseHtmlJobData(html: string, url: string, fallbackRawText?: string): 
 
 // Health check
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    databaseConfigured: Boolean(process.env.DATABASE_URL),
+    authConfigured: Boolean(process.env.CLERK_SECRET_KEY || process.env.API_AUTH_TOKEN),
+  });
+});
+
+app.get('/api/sync/bootstrap', requireApiAuth, async (_req, res) => {
+  try {
+    const userId = res.locals.userId as string;
+    await ensureUser(userId);
+    return res.json({ success: true, data: await getUserSnapshot(userId) });
+  } catch (error) {
+    console.error('Cloud bootstrap failed:', error);
+    return res.status(503).json({ error: 'Cloud persistence is not configured or unavailable.' });
+  }
 });
 
 // Document Upload & Parsing Endpoint (PDF, DOCX, TXT, MD)
-app.post('/api/documents/parse', rateLimit(20, 15 * 60 * 1000), async (req, res) => {
+app.post('/api/documents/parse', requireApiAuth, rateLimit(20, 15 * 60 * 1000), async (req, res) => {
   try {
     const { base64, fileName, fileType } = req.body;
 
@@ -724,6 +782,17 @@ app.post('/api/documents/parse', rateLimit(20, 15 * 60 * 1000), async (req, res)
       return res.status(413).json({ error: 'Document exceeds the 10 MB upload limit.' });
     }
     const ext = (fileType || fileName?.split('.').pop() || '').toLowerCase();
+    if (!['pdf', 'docx', 'txt', 'md'].includes(ext)) {
+      return res.status(400).json({ error: 'Unsupported document type.' });
+    }
+    const header = buffer.subarray(0, 8);
+    const validSignature =
+      (ext === 'pdf' && header.toString('ascii', 0, 4) === '%PDF') ||
+      (ext === 'docx' && header[0] === 0x50 && header[1] === 0x4b) ||
+      (ext === 'txt' || ext === 'md');
+    if (!validSignature) {
+      return res.status(400).json({ error: 'File contents do not match the declared document type.' });
+    }
 
     let text = '';
 
@@ -778,7 +847,7 @@ app.post('/api/documents/parse', rateLimit(20, 15 * 60 * 1000), async (req, res)
 });
 
 // 1. Scrape & Extract Job Postings
-app.post('/api/jobs/scrape', rateLimit(20, 15 * 60 * 1000), async (req, res) => {
+app.post('/api/jobs/scrape', requireApiAuth, rateLimit(20, 15 * 60 * 1000), async (req, res) => {
   let rawHtml = '';
   let usedHeadless = false;
 
@@ -1052,7 +1121,7 @@ Return valid JSON matching the schema.`;
 });
 
 // 2. ATS Resume to Job Keyword Gap Analysis
-app.post('/api/resumes/analyze-match', rateLimit(10, 15 * 60 * 1000), async (req, res) => {
+app.post('/api/resumes/analyze-match', requireApiAuth, rateLimit(10, 15 * 60 * 1000), async (req, res) => {
   try {
     const { jobDescription, requirements, resumeText, roleTitle, company } = req.body;
 
@@ -1170,7 +1239,7 @@ Perform a thorough, realistic keyword match and ATS audit:
 });
 
 // 3. Interview Prep Grounded in Real Internet Experiences
-app.post('/api/interviews/generate-prep', rateLimit(10, 15 * 60 * 1000), async (req, res) => {
+app.post('/api/interviews/generate-prep', requireApiAuth, rateLimit(10, 15 * 60 * 1000), async (req, res) => {
   try {
     const { company, role, jobDescription, resumeText } = req.body;
 
@@ -1356,6 +1425,8 @@ Format your response as clean JSON with this exact structure:
   }
 });
 
+export default app;
+
 // Setup Vite middleware in dev or static serving in prod
 async function startServer() {
   const httpServer = http.createServer(app);
@@ -1383,7 +1454,10 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === __filename;
+if (isMainModule) {
+  startServer().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
+}

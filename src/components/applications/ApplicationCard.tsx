@@ -44,6 +44,15 @@ export const ApplicationCard: React.FC<ApplicationCardProps> = ({
       draggable
       onDragStart={(e) => onDragStart && onDragStart(e, application.id)}
       onClick={() => onSelect(application)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(application);
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${application.role} at ${application.company}`}
       className="group relative p-3.5 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl shadow-xs hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all cursor-pointer select-none"
     >
       {/* Top Company & Meta */}

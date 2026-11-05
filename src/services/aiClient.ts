@@ -1,4 +1,5 @@
 import { KeywordAnalysisResult, InterviewPrepDossier } from '../types/job';
+import { getAuthHeaders } from './auth';
 
 export interface ScrapeJobPayload {
   url?: string;
@@ -39,9 +40,10 @@ function cleanErrorMessage(raw: string): string {
 
 export const apiService = {
   async scrapeJob(payload: ScrapeJobPayload): Promise<ScrapedJobResponse> {
+    const authHeaders = await getAuthHeaders();
     const res = await fetch('/api/jobs/scrape', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: JSON.stringify(payload),
     });
 
@@ -63,9 +65,10 @@ export const apiService = {
     roleTitle: string;
     company: string;
   }): Promise<KeywordAnalysisResult> {
+    const authHeaders = await getAuthHeaders();
     const res = await fetch('/api/resumes/analyze-match', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: JSON.stringify(params),
     });
 
@@ -84,9 +87,10 @@ export const apiService = {
     jobDescription: string;
     resumeText: string;
   }): Promise<InterviewPrepDossier> {
+    const authHeaders = await getAuthHeaders();
     const res = await fetch('/api/interviews/generate-prep', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: JSON.stringify(params),
     });
 
@@ -110,9 +114,10 @@ export const apiService = {
     fileType: string;
     fileSize: number;
   }> {
+    const authHeaders = await getAuthHeaders();
     const res = await fetch('/api/documents/parse', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
       body: JSON.stringify(payload),
     });
 

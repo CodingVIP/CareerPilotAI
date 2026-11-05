@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   ExternalLink,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { JobApplication, JobProfile, ApplicationStatus, JobType } from '../../types/job';
 import confetti from 'canvas-confetti';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 
 interface ApplicationDetailModalProps {
   application: JobApplication | null;
@@ -60,12 +61,23 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
     }
   );
 
+  useEffect(() => {
+    if (application && isOpen) {
+      setFormData(application);
+      setIsEditing(false);
+      setIsConfirmingDelete(false);
+      setActiveTab('overview');
+    }
+  }, [application, isOpen]);
+
   const handleCopyRaw = () => {
     const content = formData.rawDescription || formData.description || '';
     const temp = document.createElement('div');
-    temp.innerHTML = content;
-    navigator.clipboard.writeText(temp.innerText || content);
-    setCopiedRaw(true);
+    temp.innerHTML = sanitizeHtml(content);
+    navigator.clipboard
+      .writeText(temp.innerText || content)
+      .then(() => setCopiedRaw(true))
+      .catch(() => setCopiedRaw(false));
     setTimeout(() => setCopiedRaw(false), 2000);
   };
 
@@ -119,7 +131,7 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+    <div role="dialog" aria-modal="true" aria-labelledby="application-detail-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
       <div className="relative w-full max-w-3xl my-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
         {/* Top Header */}
         <div className="flex items-start justify-between px-6 py-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
@@ -137,7 +149,7 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
               <span aria-hidden="true">·</span>
               <span className="capitalize">{application.jobType}</span>
             </div>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">{application.role}</h2>
+            <h2 id="application-detail-title" className="text-xl font-bold text-slate-900 dark:text-slate-100">{application.role}</h2>
           </div>
 
           <div className="flex items-center gap-2">
@@ -416,10 +428,11 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                   <div
                     className="job-rich-content"
                     dangerouslySetInnerHTML={{
-                      __html:
+                      __html: sanitizeHtml(
                         application.rawDescription ||
-                        application.description ||
-                        '<p class="job-rich-p">No description text available.</p>',
+                          application.description ||
+                          '<p>No description text available.</p>'
+                      ),
                     }}
                   />
                 </div>

@@ -36,6 +36,9 @@ export default function App() {
   // Initialize data on mount
   useEffect(() => {
     loadData();
+    const handleStorage = () => loadData();
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
   const loadData = () => {

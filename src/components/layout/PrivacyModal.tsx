@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, ShieldCheck, Download, Upload, RefreshCw, CheckCircle2, Lock } from 'lucide-react';
 import { UserPrivacySettings } from '../../types/job';
 import { storageService } from '../../services/storage';
@@ -19,10 +19,14 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
   onDataImported,
 }) => {
   const [settings, setSettings] = useState<UserPrivacySettings>(privacy);
-  const [syncStatus, setSyncStatus] = useState<string>('Connected to Cloud Storage');
+  const [syncStatus, setSyncStatus] = useState<string>('Local browser storage');
   const [isExporting, setIsExporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
+
+  useEffect(() => {
+    setSettings(privacy);
+  }, [privacy, isOpen]);
 
   const handleToggleSync = () => {
     const updated = {
@@ -32,7 +36,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
     };
     setSettings(updated);
     onUpdatePrivacy(updated);
-    setSyncStatus(updated.cloudSyncEnabled ? 'Cloud Sync Active' : 'Offline Mode Only');
+    setSyncStatus(updated.cloudSyncEnabled ? 'Cloud sync is not configured' : 'Local browser storage');
   };
 
   const handleToggleEncryption = () => {
@@ -117,13 +121,13 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
                   }`}
                 />
                 <span className="font-medium text-slate-900 dark:text-slate-100">
-                  {settings.cloudSyncEnabled ? 'Encrypted Cloud Sync Active' : 'Offline Mode Only'}
+                  {settings.cloudSyncEnabled ? 'Cloud Sync Enabled (not configured)' : 'Local Storage Only'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 {settings.lastSyncedAt
                   ? `Last synchronized: ${new Date(settings.lastSyncedAt).toLocaleTimeString()}`
-                  : 'Zero cloud latency synchronization'}
+                  : syncStatus}
               </p>
             </div>
             <button
@@ -146,7 +150,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({
                 <div>
                   <h4 className="font-medium text-slate-900 dark:text-slate-200">Local-First Storage Encryption</h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Your resume text, contact details, and target salary remain strictly inside your private browser session.
+                    This toggle records your preference; localStorage is not encrypted by this application.
                   </p>
                 </div>
               </div>

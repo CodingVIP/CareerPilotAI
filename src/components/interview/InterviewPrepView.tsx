@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Sparkles,
   Building,
@@ -58,6 +58,10 @@ export const InterviewPrepView: React.FC<InterviewPrepViewProps> = ({
     return storageService.getInterviewDossier(selectedAppId);
   });
 
+  useEffect(() => {
+    setMasteredIds(dossier?.masteredQuestionIds || {});
+  }, [dossier]);
+
   const handleApplicationChange = (appId: string) => {
     setSelectedAppId(appId);
     const app = applications.find((a) => a.id === appId);
@@ -66,6 +70,7 @@ export const InterviewPrepView: React.FC<InterviewPrepViewProps> = ({
     }
     const cached = storageService.getInterviewDossier(appId);
     setDossier(cached);
+    setMasteredIds(cached?.masteredQuestionIds || {});
   };
 
   const handleGeneratePrep = async () => {
@@ -96,7 +101,16 @@ export const InterviewPrepView: React.FC<InterviewPrepViewProps> = ({
   };
 
   const toggleMastered = (key: string) => {
-    setMasteredIds((prev) => ({ ...prev, [key]: !prev[key] }));
+    setMasteredIds((prev) => {
+      const updated = { ...prev, [key]: !prev[key] };
+      if (dossier && selectedApp) {
+        storageService.saveInterviewDossier(selectedApp.id, {
+          ...dossier,
+          masteredQuestionIds: updated,
+        });
+      }
+      return updated;
+    });
   };
 
   return (

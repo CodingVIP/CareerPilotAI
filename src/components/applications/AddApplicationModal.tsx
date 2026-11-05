@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   Sparkles,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { JobApplication, JobProfile, ApplicationStatus, JobType } from '../../types/job';
 import { apiService } from '../../services/aiClient';
+import { sanitizeHtml } from '../../utils/sanitizeHtml';
 
 interface AddApplicationModalProps {
   isOpen: boolean;
@@ -61,6 +62,16 @@ export const AddApplicationModal: React.FC<AddApplicationModalProps> = ({
 
   const currentProfile = profiles.find((p) => p.id === selectedProfileId);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const profileId = activeProfileId || profiles[0]?.id || '';
+    const profile = profiles.find((item) => item.id === profileId);
+    setSelectedProfileId(profileId);
+    setSelectedResumeVersionId(profile?.resumeVersions[0]?.id || '');
+  }, [activeProfileId, isOpen, profiles]);
+
+  if (!isOpen) return null;
+
   const handleProfileChange = (profileId: string) => {
     setSelectedProfileId(profileId);
     const prof = profiles.find((p) => p.id === profileId);
@@ -100,7 +111,7 @@ export const AddApplicationModal: React.FC<AddApplicationModalProps> = ({
       setRequirements(extracted.requirements || []);
       setDescription(extracted.description || '');
       const rawHtml = extracted.rawDescription || extracted.description || '';
-      setRawDescription(rawHtml);
+      setRawDescription(sanitizeHtml(rawHtml));
       if (rawHtml) setShowRawBuffer(true);
 
       if (!effectiveUrl && extracted.url) {
@@ -193,25 +204,24 @@ export const AddApplicationModal: React.FC<AddApplicationModalProps> = ({
       updatedAt: new Date().toISOString(),
     };
 
-    if (!isOpen) return null;
-
     onSave(newApp);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+    <div role="dialog" aria-modal="true" aria-labelledby="add-application-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
       <div className="relative w-full max-w-2xl my-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
           <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Add New Job Application</h2>
+            <h2 id="add-application-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">Add New Job Application</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Paste a job link to auto-extract role details, requirements, and salary.
             </p>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close add application dialog"
             className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />

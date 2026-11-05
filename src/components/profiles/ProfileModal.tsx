@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { JobProfile } from '../../types/job';
 
@@ -20,6 +20,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const [summary, setSummary] = useState(initialProfile?.summary || '');
   const [skills, setSkills] = useState<string[]>(initialProfile?.skills || []);
   const [newSkill, setNewSkill] = useState('');
+
+  useEffect(() => {
+    setName(initialProfile?.name || '');
+    setTargetRole(initialProfile?.targetRole || '');
+    setSummary(initialProfile?.summary || '');
+    setSkills(initialProfile?.skills || []);
+    setNewSkill('');
+  }, [initialProfile, isOpen]);
 
   const handleAddSkill = () => {
     if (newSkill.trim() && !skills.includes(newSkill.trim())) {
@@ -47,22 +55,23 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       updatedAt: new Date().toISOString(),
     };
 
-    if (!isOpen) return null;
-
     onSave(profileToSave);
     onClose();
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+    <div role="dialog" aria-modal="true" aria-labelledby="profile-modal-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
       <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+          <h2 id="profile-modal-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">
             {initialProfile ? 'Edit Job Profile' : 'Create New Job Profile'}
           </h2>
           <button
             onClick={onClose}
+            aria-label="Close profile dialog"
             className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg"
           >
             <X className="w-5 h-5" />

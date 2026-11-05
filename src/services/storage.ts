@@ -322,11 +322,50 @@ const INITIAL_APPLICATIONS: JobApplication[] = [
 ];
 
 const INITIAL_PRIVACY: UserPrivacySettings = {
-  cloudSyncEnabled: true,
-  lastSyncedAt: new Date().toISOString(),
-  encryptLocalData: true,
+  cloudSyncEnabled: false,
+  encryptLocalData: false,
   telemetryDisabled: true,
 };
+
+const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+function isValidApplication(value: unknown): value is JobApplication {
+  if (!value || typeof value !== 'object') return false;
+  const app = value as Partial<JobApplication>;
+  return (
+    typeof app.id === 'string' &&
+    typeof app.company === 'string' &&
+    typeof app.role === 'string' &&
+    typeof app.status === 'string' &&
+    typeof app.location === 'string' &&
+    Array.isArray(app.requirements) &&
+    typeof app.description === 'string' &&
+    typeof app.notes === 'string'
+  );
+}
+
+function isValidProfile(value: unknown): value is JobProfile {
+  if (!value || typeof value !== 'object') return false;
+  const profile = value as Partial<JobProfile>;
+  return (
+    typeof profile.id === 'string' &&
+    typeof profile.name === 'string' &&
+    typeof profile.targetRole === 'string' &&
+    typeof profile.summary === 'string' &&
+    Array.isArray(profile.skills) &&
+    Array.isArray(profile.resumeVersions)
+  );
+}
+
+function isValidPrivacy(value: unknown): value is UserPrivacySettings {
+  if (!value || typeof value !== 'object') return false;
+  const settings = value as Partial<UserPrivacySettings>;
+  return (
+    typeof settings.cloudSyncEnabled === 'boolean' &&
+    typeof settings.encryptLocalData === 'boolean' &&
+    typeof settings.telemetryDisabled === 'boolean'
+  );
+}
 
 export const storageService = {
   // Applications CRUD
@@ -334,10 +373,14 @@ export const storageService = {
     try {
       const data = localStorage.getItem(STORAGE_KEY_APPLICATIONS);
       if (!data) {
-        localStorage.setItem(STORAGE_KEY_APPLICATIONS, JSON.stringify(INITIAL_APPLICATIONS));
-        return INITIAL_APPLICATIONS;
+        const defaults = clone(INITIAL_APPLICATIONS);
+        localStorage.setItem(STORAGE_KEY_APPLICATIONS, JSON.stringify(defaults));
+        return defaults;
       }
-      const parsed: JobApplication[] = JSON.parse(data);
+      const parsed: unknown = JSON.parse(data);
+      if (!Array.isArray(parsed) || !parsed.every(isValidApplication)) {
+        throw new Error('Stored applications have an invalid format.');
+      }
       return parsed.map((app) => {
         if (!app.rawDescription) {
           const initMatch = INITIAL_APPLICATIONS.find((i) => i.id === app.id);
@@ -348,7 +391,7 @@ export const storageService = {
         return app;
       });
     } catch {
-      return INITIAL_APPLICATIONS;
+      return clone(INITIAL_APPLICATIONS);
     }
   },
 
@@ -386,12 +429,17 @@ export const storageService = {
     try {
       const data = localStorage.getItem(STORAGE_KEY_PROFILES);
       if (!data) {
-        localStorage.setItem(STORAGE_KEY_PROFILES, JSON.stringify(INITIAL_PROFILES));
-        return INITIAL_PROFILES;
+        const defaults = clone(INITIAL_PROFILES);
+        localStorage.setItem(STORAGE_KEY_PROFILES, JSON.stringify(defaults));
+        return defaults;
       }
-      return JSON.parse(data);
+      const parsed: unknown = JSON.parse(data);
+      if (!Array.isArray(parsed) || !parsed.every(isValidProfile)) {
+        throw new Error('Stored profiles have an invalid format.');
+      }
+      return parsed;
     } catch {
-      return INITIAL_PROFILES;
+      return clone(INITIAL_PROFILES);
     }
   },
 
@@ -419,7 +467,18 @@ export const storageService = {
 
   deleteProfile(id: string): void {
     const profiles = this.getProfiles();
-    this.saveProfiles(profiles.filter((p) => p.id !== id));
+    const remaining = profiles.filter((p) => p.id !== id);
+    this.saveProfiles(remaining);
+    this.saveApplications(
+      this.getApplications().map((app) =>
+        app.linkedProfileId === id
+          ? { ...app, linkedProfileId: undefined, linkedResumeVersionId: undefined }
+          : app
+      )
+    );
+    if (this.getActiveProfileId() === id) {
+      this.setActiveProfileId(remaining[0]?.id || '');
+    }
   },
 
   // Resume Version CRUD within a Profile
@@ -429,6 +488,10 @@ export const storageService = {
     if (profile) {
       if (version.isDefault) {
         profile.resumeVersions.forEach((v) => (v.isDefault = false));
+      }
+      if (!profile.resumeVersions.length || version.isDefault) {
+        profile.resumeVersions.forEach((v) => (v.isDefault = false));
+        version.isDefault = true;
       }
       profile.resumeVersions.push(version);
       profile.updatedAt = new Date().toISOString();
@@ -456,16 +519,27 @@ export const storageService = {
     const profiles = this.getProfiles();
     const profile = profiles.find((p) => p.id === profileId);
     if (profile) {
+      const removed = profile.resumeVersions.find((v) => v.id === versionId);
       profile.resumeVersions = profile.resumeVersions.filter((v) => v.id !== versionId);
+      if (profile.resumeVersions.length > 0 && removed?.isDefault) {
+        profile.resumeVersions[0].isDefault = true;
+      }
       profile.updatedAt = new Date().toISOString();
       this.saveProfiles(profiles);
+      this.saveApplications(
+        this.getApplications().map((app) =>
+          app.linkedProfileId === profileId && app.linkedResumeVersionId === versionId
+            ? { ...app, linkedResumeVersionId: profile.resumeVersions[0]?.id }
+            : app
+        )
+      );
     }
   },
 
   // Active Profile
   getActiveProfileId(): string {
     const saved = localStorage.getItem(STORAGE_KEY_ACTIVE_PROFILE);
-    if (saved) return saved;
+    if (saved && this.getProfiles().some((profile) => profile.id === saved)) return saved;
     const profiles = this.getProfiles();
     return profiles[0]?.id || '';
   },
@@ -478,10 +552,12 @@ export const storageService = {
   getPrivacySettings(): UserPrivacySettings {
     try {
       const data = localStorage.getItem(STORAGE_KEY_PRIVACY);
-      if (!data) return INITIAL_PRIVACY;
-      return JSON.parse(data);
+      if (!data) return clone(INITIAL_PRIVACY);
+      const parsed: unknown = JSON.parse(data);
+      if (!isValidPrivacy(parsed)) throw new Error('Stored privacy settings have an invalid format.');
+      return parsed;
     } catch {
-      return INITIAL_PRIVACY;
+      return clone(INITIAL_PRIVACY);
     }
   },
 
@@ -535,6 +611,10 @@ export const storageService = {
       applications: this.getApplications(),
       profiles: this.getProfiles(),
       privacy: this.getPrivacySettings(),
+      activeProfileId: this.getActiveProfileId(),
+      interviewCache: JSON.parse(localStorage.getItem(STORAGE_KEY_INTERVIEWS) || '{}'),
+      matchCache: JSON.parse(localStorage.getItem(STORAGE_KEY_MATCHES) || '{}'),
+      schemaVersion: 2,
       exportedAt: new Date().toISOString(),
       appVersion: 'CareerPilot-1.0',
     };
@@ -543,16 +623,34 @@ export const storageService = {
 
   importData(jsonString: string): boolean {
     try {
-      const parsed = JSON.parse(jsonString);
-      if (Array.isArray(parsed.applications)) {
-        this.saveApplications(parsed.applications);
+      const parsed = JSON.parse(jsonString) as Record<string, unknown>;
+      if (
+        !parsed ||
+        !Array.isArray(parsed.applications) ||
+        !parsed.applications.every(isValidApplication) ||
+        !Array.isArray(parsed.profiles) ||
+        !parsed.profiles.every(isValidProfile) ||
+        !isValidPrivacy(parsed.privacy)
+      ) {
+        throw new Error('Backup does not match the CareerPilot schema.');
       }
-      if (Array.isArray(parsed.profiles)) {
-        this.saveProfiles(parsed.profiles);
-      }
-      if (parsed.privacy) {
-        this.savePrivacySettings(parsed.privacy);
-      }
+      const activeProfileId =
+        typeof parsed.activeProfileId === 'string' &&
+        parsed.profiles.some((profile) => profile.id === parsed.activeProfileId)
+          ? parsed.activeProfileId
+          : (parsed.profiles[0] as JobProfile | undefined)?.id || '';
+      localStorage.setItem(STORAGE_KEY_APPLICATIONS, JSON.stringify(parsed.applications));
+      localStorage.setItem(STORAGE_KEY_PROFILES, JSON.stringify(parsed.profiles));
+      localStorage.setItem(STORAGE_KEY_PRIVACY, JSON.stringify(parsed.privacy));
+      localStorage.setItem(STORAGE_KEY_ACTIVE_PROFILE, activeProfileId);
+      localStorage.setItem(
+        STORAGE_KEY_INTERVIEWS,
+        JSON.stringify(parsed.interviewCache && typeof parsed.interviewCache === 'object' ? parsed.interviewCache : {})
+      );
+      localStorage.setItem(
+        STORAGE_KEY_MATCHES,
+        JSON.stringify(parsed.matchCache && typeof parsed.matchCache === 'object' ? parsed.matchCache : {})
+      );
       return true;
     } catch (e) {
       console.error('Import failed:', e);
@@ -565,7 +663,10 @@ export const storageService = {
     localStorage.removeItem(STORAGE_KEY_PROFILES);
     localStorage.removeItem(STORAGE_KEY_INTERVIEWS);
     localStorage.removeItem(STORAGE_KEY_MATCHES);
+    localStorage.removeItem(STORAGE_KEY_ACTIVE_PROFILE);
+    localStorage.removeItem(STORAGE_KEY_PRIVACY);
     this.getApplications();
     this.getProfiles();
+    this.getPrivacySettings();
   },
 };

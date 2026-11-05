@@ -115,6 +115,7 @@ export interface InterviewPrepDossier {
   behavioralQuestions: BehavioralQuestion[];
   tipsForCompany: string[];
   groundingSources?: { title: string; uri: string }[];
+  masteredQuestionIds?: Record<string, boolean>;
   generatedAt: string;
 }
 

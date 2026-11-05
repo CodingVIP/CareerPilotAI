@@ -51,7 +51,7 @@ export const AtsOptimizerView: React.FC<AtsOptimizerViewProps> = ({
   const selectedResume = selectedProfile?.resumeVersions.find((v) => v.id === selectedResumeId);
 
   // Check cached analysis
-  const cacheKey = `${selectedAppId}_${selectedResumeId}`;
+  const cacheKey = `${selectedAppId}_${selectedApp?.updatedAt || ''}_${selectedResumeId}_${selectedResume?.uploadedAt || ''}`;
   const [analysisResult, setAnalysisResult] = useState<KeywordAnalysisResult | null>(() => {
     return storageService.getKeywordMatch(cacheKey);
   });
@@ -62,7 +62,9 @@ export const AtsOptimizerView: React.FC<AtsOptimizerViewProps> = ({
     if (prof && prof.resumeVersions.length > 0) {
       const def = prof.resumeVersions.find((v) => v.isDefault) || prof.resumeVersions[0];
       setSelectedResumeId(def.id);
-      const newCache = storageService.getKeywordMatch(`${selectedAppId}_${def.id}`);
+      const newCache = storageService.getKeywordMatch(
+        `${selectedAppId}_${selectedApp?.updatedAt || ''}_${def.id}_${def.uploadedAt || ''}`
+      );
       setAnalysisResult(newCache);
     }
   };
@@ -76,7 +78,13 @@ export const AtsOptimizerView: React.FC<AtsOptimizerViewProps> = ({
         setSelectedResumeId(app.linkedResumeVersionId);
       }
     }
-    const newCache = storageService.getKeywordMatch(`${appId}_${selectedResumeId}`);
+    const nextResumeId = app?.linkedResumeVersionId || selectedResumeId;
+    const nextResume = profiles
+      .flatMap((profile) => profile.resumeVersions)
+      .find((resume) => resume.id === nextResumeId);
+    const newCache = storageService.getKeywordMatch(
+      `${appId}_${app?.updatedAt || ''}_${nextResumeId}_${nextResume?.uploadedAt || ''}`
+    );
     setAnalysisResult(newCache);
   };
 
@@ -186,7 +194,12 @@ export const AtsOptimizerView: React.FC<AtsOptimizerViewProps> = ({
               value={selectedResumeId}
               onChange={(e) => {
                 setSelectedResumeId(e.target.value);
-                setAnalysisResult(storageService.getKeywordMatch(`${selectedAppId}_${e.target.value}`));
+                const nextResume = selectedProfile?.resumeVersions.find((resume) => resume.id === e.target.value);
+                setAnalysisResult(
+                  storageService.getKeywordMatch(
+                    `${selectedAppId}_${selectedApp?.updatedAt || ''}_${e.target.value}_${nextResume?.uploadedAt || ''}`
+                  )
+                );
               }}
               className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 font-medium"
             >

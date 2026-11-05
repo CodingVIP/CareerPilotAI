@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   X,
   FileText,
@@ -53,6 +53,20 @@ export const ResumeVersionModal: React.FC<ResumeVersionModalProps> = ({
   const [showRawEditor, setShowRawEditor] = useState(!initialVersion?.fileData);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setVersionName(initialVersion?.versionName || '');
+    setContent(initialVersion?.content || '');
+    setIsDefault(initialVersion?.isDefault || false);
+    setTags(initialVersion?.tags || []);
+    setFileName(initialVersion?.fileName);
+    setFileType(initialVersion?.fileType);
+    setFileSize(initialVersion?.fileSize);
+    setFileData(initialVersion?.fileData);
+    setShowRawEditor(!initialVersion?.fileData);
+    setParseError(null);
+    setParseSuccessMessage(null);
+  }, [initialVersion, isOpen]);
 
   const wordCount = content.trim() ? content.trim().split(/\s+/).filter(Boolean).length : 0;
 
@@ -197,19 +211,19 @@ export const ResumeVersionModal: React.FC<ResumeVersionModalProps> = ({
       uploadedAt: initialVersion?.uploadedAt || new Date().toISOString(),
     };
 
-    if (!isOpen) return null;
-
     onSave(versionToSave);
     onClose();
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+    <div role="dialog" aria-modal="true" aria-labelledby="resume-modal-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
       <div className="relative w-full max-w-3xl my-8 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
           <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+            <h2 id="resume-modal-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">
               {initialVersion ? 'Edit Resume Version' : 'Upload & Store Resume Document'}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -218,6 +232,7 @@ export const ResumeVersionModal: React.FC<ResumeVersionModalProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close resume dialog"
             className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             <X className="w-5 h-5" />
