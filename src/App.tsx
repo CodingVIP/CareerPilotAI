@@ -44,10 +44,13 @@ export default function App() {
       if (!storageService.getPrivacySettings().cloudSyncEnabled || !navigator.onLine) return;
       try {
         const result = await syncService.flush();
-        setSyncConflicts(syncService.getConflicts());
-        if (result.applied) addToast({ type: 'success', title: 'Changes synchronized', description: `${result.applied} local change${result.applied === 1 ? '' : 's'} uploaded.` });
-      } catch {
-        // A missing login or cloud configuration should not interrupt local-first use.
+        handleSyncResult(result);
+      } catch (error: unknown) {
+        addToast({
+          type: 'warning',
+          title: 'Cloud sync unavailable',
+          description: error instanceof Error ? error.message : 'Local changes remain queued for retry.',
+        });
       } finally {
       }
     };
@@ -114,6 +117,31 @@ export default function App() {
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
+  };
+
+  const handleSyncResult = (result: { applied: number; conflicts: number }) => {
+    const conflicts = syncService.getConflicts();
+    setSyncConflicts(conflicts);
+    if (result.applied > 0) {
+      const updatedPrivacy = {
+        ...storageService.getPrivacySettings(),
+        lastSyncedAt: new Date().toISOString(),
+      };
+      storageService.savePrivacySettings(updatedPrivacy);
+      setPrivacy(updatedPrivacy);
+      addToast({
+        type: 'success',
+        title: 'Changes synchronized',
+        description: `${result.applied} local change${result.applied === 1 ? '' : 's'} uploaded.`,
+      });
+    }
+    if (result.conflicts > 0) {
+      addToast({
+        type: 'warning',
+        title: 'Sync conflicts need review',
+        description: `${result.conflicts} local change${result.conflicts === 1 ? '' : 's'} could not be applied.`,
+      });
+    }
   };
 
   const dismissToast = (id: string) => {
@@ -385,7 +413,13 @@ export default function App() {
           onRetry={(id) => {
             syncService.retryConflict(id);
             setSyncConflicts(syncService.getConflicts());
-            void syncService.flush().then(() => setSyncConflicts(syncService.getConflicts())).catch(() => undefined);
+            void syncService.flush().then(handleSyncResult).catch((error: unknown) => {
+              addToast({
+                type: 'warning',
+                title: 'Cloud sync unavailable',
+                description: error instanceof Error ? error.message : 'Local changes remain queued for retry.',
+              });
+            });
           }}
           onDiscard={(id) => {
             syncService.discard(id);
